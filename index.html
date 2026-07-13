@@ -559,17 +559,34 @@ function loadStock(s){
     var chart=data.chart.result[0];
     var closes=chart.indicators.quote[0].close;
     var timestamps=chart.timestamp||[];
+    var meta=chart.meta||{};
 
-    s.rsi=calcRSI(closes);
     var validIdx=[];
     var valid=[];
     for(var i=0;i<closes.length;i++){
       if(closes[i]!=null){ valid.push(closes[i]); validIdx.push(i); }
     }
-    s.price=valid[valid.length-1]; s.prevClose=valid[valid.length-2];
-    s.name=(chart.meta&&(chart.meta.longName||chart.meta.shortName))||'';
+
+    // ── 진짜 최신 가격 결정 ──
+    // Yahoo의 close 배열은 당일 캔들이 아직 미확정이면 마지막 값이 null로 비어있을 수 있어서,
+    // 그 경우 배열의 "마지막 유효값"이 실제로는 하루 이전 데이터가 되어버림.
+    // meta.regularMarketPrice는 항상 가장 최신(오늘 마감가 또는 실시간가) 값을 담고 있으므로 이를 우선 사용.
+    var lastCloseIsMissing = closes.length>0 && closes[closes.length-1]==null;
+    var latestPrice = (meta.regularMarketPrice != null) ? meta.regularMarketPrice : valid[valid.length-1];
+
+    if (lastCloseIsMissing && meta.regularMarketPrice != null) {
+      // 오늘 데이터가 비어있었는데 실제 최신가가 있는 경우: valid 배열 끝에 오늘 값을 추가해서
+      // 가격/RSI/차트가 전부 동일한 최신 데이터를 기준으로 일관되게 표시되도록 함
+      valid.push(latestPrice);
+      validIdx.push(closes.length-1);
+    }
+
+    s.price=valid[valid.length-1];
+    s.prevClose=valid[valid.length-2];
+    s.rsi=calcRSI(valid);
+    s.name=(meta.longName||meta.shortName)||'';
     s.chartData=valid.slice(-180);
-    s.timestamps=validIdx.slice(-180).map(function(idx){ return timestamps[idx]; });
+    s.timestamps=validIdx.slice(-180).map(function(idx){ return timestamps[idx]!=null?timestamps[idx]:timestamps[timestamps.length-1]; });
     s.loading=false; s.error=null; s.lastUp=new Date();
     renderLastUpdate(s.lastUp);
   })
