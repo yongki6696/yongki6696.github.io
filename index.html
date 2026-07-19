@@ -267,7 +267,7 @@ body.edit-mode .edit-hint { display:block; }
     </p>
   </div>
   <a href="mailto:yongki6696@naver.com" style="display:block;margin-bottom:16px;">
-    <img src="ad-banner-728x90.png" alt="광고 협업 문의" style="width:100%;height:auto;border-radius:12px;display:block;">
+    <img id="ad-banner-top" src="ad-banner-728x90.png" alt="광고 협업 문의" style="width:100%;height:auto;border-radius:12px;display:block;">
   </a>
 
   <div class="banner banner-blue hidden" id="pwa-banner">
@@ -352,7 +352,7 @@ body.edit-mode .edit-hint { display:block; }
     </table>
   </div>
   <a href="mailto:yongki6696@naver.com" style="display:block;margin-top:16px;">
-    <img src="ad-banner-300x250.png" alt="광고 협업 문의" style="width:100%;max-width:300px;height:auto;border-radius:14px;display:block;margin:0 auto;">
+    <img id="ad-banner-bottom" src="ad-banner-300x250.png" alt="광고 협업 문의" style="width:100%;max-width:300px;height:auto;border-radius:14px;display:block;margin:0 auto;">
   </a>
 
   <div class="disclaimer">
@@ -1205,6 +1205,19 @@ function krsearchClose(){
     if (krsearchOutsideScrolling) return; // 스크롤이었으면 닫지 않음
     if (!e.target.closest('.krsearch-wrap')) krsearchClose();
   }, {passive:true});
+})();
+
+// ══════════════════════════════════════════
+// 광고 배너 캐시 방지 (신규, 독립 함수)
+// 페이지 로드마다 이미지 URL에 타임스탬프를 붙여서
+// 이미지 파일만 교체하면 코드 수정 없이 항상 최신 이미지가 보이게 함
+// ══════════════════════════════════════════
+(function adBannerCacheBust(){
+  var v = Date.now();
+  var topAd = document.getElementById('ad-banner-top');
+  var bottomAd = document.getElementById('ad-banner-bottom');
+  if (topAd) topAd.src = 'ad-banner-728x90.png?v=' + v;
+  if (bottomAd) bottomAd.src = 'ad-banner-300x250.png?v=' + v;
 })();
 
 (function init(){
