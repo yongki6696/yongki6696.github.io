@@ -202,6 +202,19 @@ body.edit-mode .edit-hint { display:block; }
 .krsearch-exch { font-size:10px; margin-left:6px; }
 .krsearch-empty { padding:12px 14px; color:var(--muted); font-size:12px; text-align:center; line-height:1.6; }
 
+/* ── 검색 탭 + 전체목록 (신규) ── */
+.krsearch-tabs {
+  display:flex; border-bottom:1px solid var(--border);
+  position:sticky; top:0; background:#1a1a1a; z-index:1;
+}
+.krsearch-tab {
+  flex:1; text-align:center; padding:10px 0; font-size:13px;
+  color:var(--muted); cursor:pointer; touch-action:manipulation;
+  border-bottom:2px solid transparent;
+}
+.krsearch-tab-active { color:var(--text); font-weight:700; border-bottom-color:var(--accent2); }
+.krsearch-list { }
+
 /* ── 고점 대비 하락률 (신규) ── */
 .mdd-badge {
   display:inline-flex; align-items:center; gap:6px;
@@ -1084,6 +1097,9 @@ var KRSEARCH_DB = [
   {n:'동진쎄미켐',t:'005290.KQ'},{n:'코스모신소재',t:'005070.KQ'}
 ];
 
+// 미국 주요 종목 200개 (신규, 티커 알파벳순 정렬됨)
+var US_STOCK_DB = [{n:'Apple',t:'AAPL'},{n:'AbbVie',t:'ABBV'},{n:'Airbnb',t:'ABNB'},{n:'Abbott',t:'ABT'},{n:'Accenture',t:'ACN'},{n:'Adobe',t:'ADBE'},{n:'Analog Devices',t:'ADI'},{n:'ADP',t:'ADP'},{n:'AIG',t:'AIG'},{n:'Applied Materials',t:'AMAT'},{n:'AMD',t:'AMD'},{n:'Amgen',t:'AMGN'},{n:'American Tower',t:'AMT'},{n:'Amazon',t:'AMZN'},{n:'Air Products',t:'APD'},{n:'AppLovin',t:'APP'},{n:'ARK Innovation',t:'ARKK'},{n:'Arm Holdings',t:'ARM'},{n:'Broadcom',t:'AVGO'},{n:'American Express',t:'AXP'},{n:'Boeing',t:'BA'},{n:'Bank of America',t:'BAC'},{n:'Biogen',t:'BIIB'},{n:'ProShares Bitcoin Strategy',t:'BITO'},{n:'BNY Mellon',t:'BK'},{n:'Booking Holdings',t:'BKNG'},{n:'BlackRock',t:'BLK'},{n:'Bristol-Myers',t:'BMY'},{n:'Berkshire Hathaway',t:'BRK.B'},{n:'Boston Scientific',t:'BSX'},{n:'Citigroup',t:'C'},{n:'Caterpillar',t:'CAT'},{n:'Chubb',t:'CB'},{n:'Cigna',t:'CI'},{n:'Colgate-Palmolive',t:'CL'},{n:'Comcast',t:'CMCSA'},{n:'Capital One',t:'COF'},{n:'Coinbase',t:'COIN'},{n:'ConocoPhillips',t:'COP'},{n:'Costco',t:'COST'},{n:'Salesforce',t:'CRM'},{n:'Crocs',t:'CROX'},{n:'CrowdStrike',t:'CRWD'},{n:'Cisco',t:'CSCO'},{n:'CVS Health',t:'CVS'},{n:'Chevron',t:'CVX'},{n:'DoorDash',t:'DASH'},{n:'Deere',t:'DE'},{n:'Danaher',t:'DHR'},{n:'SPDR Dow Jones',t:'DIA'},{n:'Disney',t:'DIS'},{n:'DraftKings',t:'DKNG'},{n:'Dow Inc',t:'DOW'},{n:'Roundhill Memory ETF',t:'DRAM'},{n:'Duke Energy',t:'DUK'},{n:'iShares MSCI Emerging Markets',t:'EEM'},{n:'iShares MSCI EAFE',t:'EFA'},{n:'Emerson Electric',t:'EMR'},{n:'EOG Resources',t:'EOG'},{n:'Equinix',t:'EQIX'},{n:'Eaton',t:'ETN'},{n:'Exelon',t:'EXC'},{n:'Ford',t:'F'},{n:'FedEx',t:'FDX'},{n:'MicroSectors FANG+ 3x',t:'FNGU'},{n:'General Dynamics',t:'GD'},{n:'GE Aerospace',t:'GE'},{n:'Gilead Sciences',t:'GILD'},{n:'SPDR Gold Shares',t:'GLD'},{n:'General Motors',t:'GM'},{n:'Alphabet',t:'GOOG'},{n:'Alphabet A',t:'GOOGL'},{n:'Goldman Sachs',t:'GS'},{n:'Home Depot',t:'HD'},{n:'Honeywell',t:'HON'},{n:'Robinhood',t:'HOOD'},{n:'iShares High Yield Corp Bond',t:'HYG'},{n:'iShares Bitcoin Trust',t:'IBIT'},{n:'IBM',t:'IBM'},{n:'ICE',t:'ICE'},{n:'Intel',t:'INTC'},{n:'Intuit',t:'INTU'},{n:'Intuitive Surgical',t:'ISRG'},{n:'iShares Russell 2000',t:'IWM'},{n:'Johnson & Johnson',t:'JNJ'},{n:'JPMorgan Chase',t:'JPM'},{n:'Kraft Heinz',t:'KHC'},{n:'Coca-Cola',t:'KO'},{n:'Lucid Group',t:'LCID'},{n:'Linde',t:'LIN'},{n:'Eli Lilly',t:'LLY'},{n:'Lockheed Martin',t:'LMT'},{n:'Lowe\'s',t:'LOW'},{n:'Lam Research',t:'LRCX'},{n:'Mastercard',t:'MA'},{n:'Marathon Digital',t:'MARA'},{n:'McDonald\'s',t:'MCD'},{n:'Mondelez',t:'MDLZ'},{n:'Medtronic',t:'MDT'},{n:'MetLife',t:'MET'},{n:'Meta Platforms',t:'META'},{n:'Marsh McLennan',t:'MMC'},{n:'3M',t:'MMM'},{n:'Altria',t:'MO'},{n:'Merck',t:'MRK'},{n:'Moderna',t:'MRNA'},{n:'Marvell Technology',t:'MRVL'},{n:'Morgan Stanley',t:'MS'},{n:'Microsoft',t:'MSFT'},{n:'Strategy',t:'MSTR'},{n:'Micron Technology',t:'MU'},{n:'NextEra Energy',t:'NEE'},{n:'Newmont',t:'NEM'},{n:'Netflix',t:'NFLX'},{n:'NIO Inc',t:'NIO'},{n:'Nike',t:'NKE'},{n:'Northrop Grumman',t:'NOC'},{n:'ServiceNow',t:'NOW'},{n:'NVIDIA',t:'NVDA'},{n:'GraniteShares 2x NVDA',t:'NVDL'},{n:'T-Rex 2x NVDA',t:'NVDX'},{n:'Novo Nordisk',t:'NVO'},{n:'ON Semiconductor',t:'ON'},{n:'Oracle',t:'ORCL'},{n:'Palo Alto Networks',t:'PANW'},{n:'PepsiCo',t:'PEP'},{n:'Pfizer',t:'PFE'},{n:'Procter & Gamble',t:'PG'},{n:'Progressive',t:'PGR'},{n:'Pinterest',t:'PINS'},{n:'Prologis',t:'PLD'},{n:'Palantir',t:'PLTR'},{n:'Plug Power',t:'PLUG'},{n:'Philip Morris',t:'PM'},{n:'PayPal',t:'PYPL'},{n:'Qualcomm',t:'QCOM'},{n:'ProShares Ultra QQQ',t:'QLD'},{n:'Invesco QQQ',t:'QQQ'},{n:'Riot Platforms',t:'RIOT'},{n:'Rivian',t:'RIVN'},{n:'Rocket Lab',t:'RKLB'},{n:'Roku',t:'ROKU'},{n:'RTX Corp',t:'RTX'},{n:'Starbucks',t:'SBUX'},{n:'Schwab',t:'SCHW'},{n:'Shopify',t:'SHOP'},{n:'Schlumberger',t:'SLB'},{n:'iShares Silver Trust',t:'SLV'},{n:'Super Micro Computer',t:'SMCI'},{n:'Snap Inc',t:'SNAP'},{n:'Snowflake',t:'SNOW'},{n:'Southern Company',t:'SO'},{n:'SoFi Technologies',t:'SOFI'},{n:'Direxion Semiconductor Bull 3x',t:'SOXL'},{n:'Direxion Semiconductor Bear 3x',t:'SOXS'},{n:'SpaceX (perp)',t:'SPCX'},{n:'S&P Global',t:'SPGI'},{n:'Spotify',t:'SPOT'},{n:'Direxion S&P500 Bull 3x',t:'SPXL'},{n:'Direxion S&P500 Bear 3x',t:'SPXS'},{n:'SPDR S&P 500',t:'SPY'},{n:'ProShares UltraPro Short QQQ',t:'SQQQ'},{n:'ProShares Ultra S&P500',t:'SSO'},{n:'Stryker',t:'SYK'},{n:'AT&T',t:'T'},{n:'Target',t:'TGT'},{n:'TJX Companies',t:'TJX'},{n:'iShares 20+ Year Treasury',t:'TLT'},{n:'Thermo Fisher',t:'TMO'},{n:'T-Mobile',t:'TMUS'},{n:'ProShares UltraPro QQQ',t:'TQQQ'},{n:'Tesla',t:'TSLA'},{n:'Direxion 2x TSLA',t:'TSLL'},{n:'Tradr 1.5x Short TSLA',t:'TSLQ'},{n:'TSMC',t:'TSM'},{n:'Texas Instruments',t:'TXN'},{n:'Uber Technologies',t:'UBER'},{n:'UnitedHealth',t:'UNH'},{n:'Union Pacific',t:'UNP'},{n:'ProShares UltraPro S&P500',t:'UPRO'},{n:'UPS',t:'UPS'},{n:'US Bancorp',t:'USB'},{n:'United States Oil Fund',t:'USO'},{n:'Visa',t:'V'},{n:'Vanguard S&P 500',t:'VOO'},{n:'Vertex Pharmaceuticals',t:'VRTX'},{n:'Vanguard Total Stock',t:'VTI'},{n:'iPath S&P 500 VIX',t:'VXX'},{n:'Verizon',t:'VZ'},{n:'Wells Fargo',t:'WFC'},{n:'Walmart',t:'WMT'},{n:'Energy Select Sector',t:'XLE'},{n:'Financial Select Sector',t:'XLF'},{n:'Technology Select Sector',t:'XLK'},{n:'Health Care Select Sector',t:'XLV'},{n:'Consumer Discretionary Sector',t:'XLY'},{n:'ExxonMobil',t:'XOM'},{n:'Zoom',t:'ZM'}];
+
 function krsearchIsKorean(str){ return /[가-힣]/.test(str); }
 
 // 티커 → 한글 종목명 역매칭 (카드 표시용, s.ticker 자체는 변경하지 않음)
@@ -1106,6 +1122,95 @@ function krsearchFormatPrice(ticker, price){
   return '$' + price.toFixed(2);
 }
 
+// 현재 선택된 탭 상태 (신규)
+var krsearchActiveTab = 'kr'; // 'kr' 또는 'us'
+
+// 검색 결과 항목들을 렌더링하고 터치/클릭 이벤트를 바인딩 (기존 로직 재사용, 신규 공용 함수로 분리)
+function krsearchBindItems(dd){
+  Array.prototype.forEach.call(dd.querySelectorAll('.krsearch-item'), function(item){
+    var touchStartX = 0, touchStartY = 0, moved = false;
+
+    function pick(e){
+      e.preventDefault(); e.stopPropagation();
+      var inp = document.getElementById('inp-ticker');
+      inp.value = item.getAttribute('data-t');
+      dd.classList.remove('krsearch-show');
+      dd.innerHTML = '';
+    }
+
+    item.addEventListener('touchstart', function(e){
+      var t = e.touches[0];
+      touchStartX = t.clientX;
+      touchStartY = t.clientY;
+      moved = false;
+    }, {passive:true});
+
+    item.addEventListener('touchmove', function(e){
+      var t = e.touches[0];
+      var dx = Math.abs(t.clientX - touchStartX);
+      var dy = Math.abs(t.clientY - touchStartY);
+      if (dx > 6 || dy > 6) moved = true;
+    }, {passive:true});
+
+    item.addEventListener('touchend', function(e){
+      if (moved) return;
+      pick(e);
+    }, {passive:false});
+
+    item.addEventListener('mousedown', pick);
+  });
+}
+
+// 종목 리스트를 HTML 항목들로 변환 (기존 검색결과/전체목록 공통 사용, 신규 공용 함수)
+function krsearchItemsHTML(list){
+  return list.map(function(s){
+    var isKS = s.t.indexOf('.KS') !== -1;
+    var isKQ = s.t.indexOf('.KQ') !== -1;
+    var exch, color;
+    if (isKS) { exch='코스피'; color='#3b82f6'; }
+    else if (isKQ) { exch='코스닥'; color='#22c55e'; }
+    else { exch='미국'; color='#f59e0b'; }
+    return '<div class="krsearch-item" data-t="'+s.t+'">'
+      + '<span class="krsearch-name">'+s.n+'</span>'
+      + '<span><span class="krsearch-ticker">'+s.t+'</span>'
+      + '<span class="krsearch-exch" style="color:'+color+'">'+exch+'</span></span>'
+      + '</div>';
+  }).join('');
+}
+
+// 탭 헤더 HTML 생성 (신규)
+function krsearchTabsHTML(){
+  return '<div class="krsearch-tabs">'
+    + '<div class="krsearch-tab'+(krsearchActiveTab==='kr'?' krsearch-tab-active':'')+'" data-tab="kr">한국</div>'
+    + '<div class="krsearch-tab'+(krsearchActiveTab==='us'?' krsearch-tab-active':'')+'" data-tab="us">미국</div>'
+    + '</div>';
+}
+
+// 전체 목록 표시 (검색창이 비어있을 때, 신규)
+function krsearchShowAll(){
+  var dd = document.getElementById('krsearch-dropdown');
+  if (!dd) return;
+  var list = krsearchActiveTab === 'kr' ? KRSEARCH_DB : US_STOCK_DB;
+  dd.innerHTML = krsearchTabsHTML()
+    + '<div class="krsearch-list">' + krsearchItemsHTML(list) + '</div>';
+  dd.classList.add('krsearch-show');
+  krsearchBindItems(dd);
+  krsearchBindTabs(dd);
+}
+
+// 탭 클릭 이벤트 바인딩 (신규)
+function krsearchBindTabs(dd){
+  Array.prototype.forEach.call(dd.querySelectorAll('.krsearch-tab'), function(tab){
+    function switchTab(e){
+      e.preventDefault(); e.stopPropagation();
+      krsearchActiveTab = tab.getAttribute('data-tab');
+      krsearchShowAll();
+    }
+    tab.addEventListener('touchend', switchTab, {passive:false});
+    tab.addEventListener('mousedown', switchTab);
+  });
+}
+
 function krsearchRender(query){
   var dd = document.getElementById('krsearch-dropdown');
   if (!dd) return;
@@ -1120,53 +1225,9 @@ function krsearchRender(query){
     return;
   }
 
-  dd.innerHTML = results.map(function(s){
-    var isKS = s.t.indexOf('.KS') !== -1;
-    var exch = isKS ? '코스피' : '코스닥';
-    var color = isKS ? '#3b82f6' : '#22c55e';
-    return '<div class="krsearch-item" data-t="'+s.t+'">'
-      + '<span class="krsearch-name">'+s.n+'</span>'
-      + '<span><span class="krsearch-ticker">'+s.t+'</span>'
-      + '<span class="krsearch-exch" style="color:'+color+'">'+exch+'</span></span>'
-      + '</div>';
-  }).join('');
+  dd.innerHTML = krsearchItemsHTML(results);
   dd.classList.add('krsearch-show');
-
-  Array.prototype.forEach.call(dd.querySelectorAll('.krsearch-item'), function(item){
-    var touchStartX = 0, touchStartY = 0, moved = false;
-
-    function pick(e){
-      e.preventDefault(); e.stopPropagation();
-      var inp = document.getElementById('inp-ticker');
-      inp.value = item.getAttribute('data-t');
-      dd.classList.remove('krsearch-show');
-      dd.innerHTML = '';
-    }
-
-    // 터치 시작 지점 기록
-    item.addEventListener('touchstart', function(e){
-      var t = e.touches[0];
-      touchStartX = t.clientX;
-      touchStartY = t.clientY;
-      moved = false;
-    }, {passive:true});
-
-    // 이동 거리가 크면(스크롤 의도) 선택하지 않도록 표시만 해둠
-    item.addEventListener('touchmove', function(e){
-      var t = e.touches[0];
-      var dx = Math.abs(t.clientX - touchStartX);
-      var dy = Math.abs(t.clientY - touchStartY);
-      if (dx > 6 || dy > 6) moved = true; // 6px 이상 움직이면 스크롤로 판단
-    }, {passive:true});
-
-    // 터치가 끝났을 때, 스크롤이 아니었을 때만(진짜 탭일 때만) 선택 처리
-    item.addEventListener('touchend', function(e){
-      if (moved) return; // 스크롤 중이었으면 선택하지 않고 그대로 스크롤 진행
-      pick(e);
-    }, {passive:false});
-
-    item.addEventListener('mousedown', pick);
-  });
+  krsearchBindItems(dd);
 }
 
 function krsearchClose(){
@@ -1182,9 +1243,16 @@ function krsearchClose(){
     var val = this.value;
     if (krsearchIsKorean(val)) {
       krsearchRender(val);
+    } else if (!val.trim()) {
+      krsearchShowAll(); // 입력이 비워지면 다시 전체 목록 표시
     } else {
       krsearchClose();
     }
+  });
+
+  // 검색창을 터치(포커스)했을 때, 비어있으면 전체 목록을 바로 보여줌 (신규)
+  inp.addEventListener('focus', function(){
+    if (!this.value.trim()) krsearchShowAll();
   });
 
   document.addEventListener('click', function(e){
