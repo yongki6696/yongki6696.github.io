@@ -1133,6 +1133,8 @@ function krsearchRender(query){
   dd.classList.add('krsearch-show');
 
   Array.prototype.forEach.call(dd.querySelectorAll('.krsearch-item'), function(item){
+    var touchStartX = 0, touchStartY = 0, moved = false;
+
     function pick(e){
       e.preventDefault(); e.stopPropagation();
       var inp = document.getElementById('inp-ticker');
@@ -1140,7 +1142,29 @@ function krsearchRender(query){
       dd.classList.remove('krsearch-show');
       dd.innerHTML = '';
     }
-    item.addEventListener('touchend', pick, {passive:false});
+
+    // 터치 시작 지점 기록
+    item.addEventListener('touchstart', function(e){
+      var t = e.touches[0];
+      touchStartX = t.clientX;
+      touchStartY = t.clientY;
+      moved = false;
+    }, {passive:true});
+
+    // 이동 거리가 크면(스크롤 의도) 선택하지 않도록 표시만 해둠
+    item.addEventListener('touchmove', function(e){
+      var t = e.touches[0];
+      var dx = Math.abs(t.clientX - touchStartX);
+      var dy = Math.abs(t.clientY - touchStartY);
+      if (dx > 6 || dy > 6) moved = true; // 6px 이상 움직이면 스크롤로 판단
+    }, {passive:true});
+
+    // 터치가 끝났을 때, 스크롤이 아니었을 때만(진짜 탭일 때만) 선택 처리
+    item.addEventListener('touchend', function(e){
+      if (moved) return; // 스크롤 중이었으면 선택하지 않고 그대로 스크롤 진행
+      pick(e);
+    }, {passive:false});
+
     item.addEventListener('mousedown', pick);
   });
 }
