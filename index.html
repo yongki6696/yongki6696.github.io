@@ -172,6 +172,15 @@ body.edit-mode .edit-hint { display:block; }
 }
 .div-bull { background:rgba(34,197,94,.15); color:#4ade80; border:1px solid rgba(34,197,94,.3); }
 .div-bear { background:rgba(239,68,68,.15);  color:#ff6b6b; border:1px solid rgba(239,68,68,.3); }
+
+/* ── 골든크로스 / 데드크로스 배지 (신규) ── */
+.mac-badge {
+  display:flex; flex-direction:column; gap:2px;
+  padding:7px 12px; border-radius:10px; font-size:12px; font-weight:700;
+  margin-top:8px; width:100%;
+}
+.mac-golden { background:rgba(245,197,66,.15); color:#f5c542; border:1px solid rgba(245,197,66,.3); }
+.mac-dead   { background:rgba(167,139,250,.15); color:#a78bfa; border:1px solid rgba(167,139,250,.3); }
 .disclaimer {
   margin-top:28px; padding:14px 16px;
   background:rgba(255,255,255,.03); border:1px solid var(--border);
@@ -548,6 +557,67 @@ function detectDivergence(closes,timestamps){
   }
   return null;
 }
+
+// ══════════════════════════════════════════
+// 골든크로스 / 데드크로스 감지 (신규, MA60 vs MA120)
+// ══════════════════════════════════════════
+function calcMA(data, period){
+  // data 전체 길이에 맞춰 각 지점의 이동평균값 배열 반환 (계산 불가능한 앞부분은 null)
+  var result = new Array(data.length).fill(null);
+  for (var i = period-1; i < data.length; i++){
+    var sum = 0;
+    for (var j = i-period+1; j <= i; j++) sum += data[j];
+    result[i] = sum / period;
+  }
+  return result;
+}
+
+function detectMACross(data, timestamps){
+  if (!data || data.length < 121) return null; // MA120 계산에 최소 121개 필요
+  var ma60 = calcMA(data, 60);
+  var ma120 = calcMA(data, 120);
+
+  // 최근 10일 이내에 교차가 발생했는지 확인 (너무 오래된 교차는 의미가 약함)
+  var lookback = Math.min(10, data.length - 120);
+  var crossIdx = -1, crossType = null;
+
+  for (var i = data.length - 1; i >= data.length - lookback; i--){
+    if (ma60[i] == null || ma120[i] == null || ma60[i-1] == null || ma120[i-1] == null) continue;
+    var prevDiff = ma60[i-1] - ma120[i-1];
+    var currDiff = ma60[i] - ma120[i];
+    if (prevDiff <= 0 && currDiff > 0){
+      crossIdx = i; crossType = 'golden'; break;
+    }
+    if (prevDiff >= 0 && currDiff < 0){
+      crossIdx = i; crossType = 'dead'; break;
+    }
+  }
+
+  if (crossIdx === -1) return null;
+
+  var dateStr = '';
+  if (timestamps && timestamps[crossIdx]){
+    var d = new Date(timestamps[crossIdx]*1000);
+    dateStr = (d.getMonth()+1)+'/'+d.getDate();
+  }
+
+  return {
+    type: crossType,
+    label: crossType==='golden' ? '⭐ 골든크로스' : '💀 데드크로스',
+    desc: crossType==='golden' ? 'MA60↑MA120 — 상승 전환 신호' : 'MA60↓MA120 — 하락 전환 신호',
+    date: dateStr,
+    idx: crossIdx
+  };
+}
+
+function getMACrossHTML(cross){
+  if (!cross) return '';
+  var cls = cross.type==='golden' ? 'mac-golden' : 'mac-dead';
+  var dateStr = cross.date ? '<span style="font-size:10px;opacity:.7;font-weight:400;margin-left:6px">'+cross.date+'</span>' : '';
+  return '<div class="mac-badge '+cls+'">'
+    + '<div>'+cross.label+dateStr+' <span style="font-weight:400;font-size:11px;opacity:.8">'+cross.desc+'</span></div>'
+    + '</div>';
+}
 function getDivHTML(s){
   if(!s.chartData||s.chartData.length<30) return '';
   var div=detectDivergence(s.chartData,s.timestamps); if(!div) return '';
@@ -774,6 +844,9 @@ function renderCard(s){
     ? (legendHTML + '<div style="position:relative">' + makeMiniChart(s.chartData,chartColor,chartDisplayLen) + divMarkerHTML + '</div>')
     : '';
   var divHTML = divResult ? getDivHTMLFromResult(divResult) : '';
+  // 골든크로스/데드크로스 감지 (신규, 다이버전스와 별개로 독립 계산)
+  var macResult = (s.chartData && s.chartData.length>=121) ? detectMACross(s.chartData, s.timestamps) : null;
+  var macHTML = macResult ? getMACrossHTML(macResult) : '';
   var krsearchDisplay=krsearchTickerToName(s.ticker);
   var mddDisplay=mddHTML(s);
 
@@ -789,7 +862,7 @@ function renderCard(s){
     +'</div></div>'
     +'<div class="card-body"><div>'+priceHTML+mddDisplay+'</div>'
     +'<div><div class="rsi-label-sm">RSI(14) · '+pLabel(s.period)+'</div>'+rsiHTML+'</div></div>'
-    +chartHTML+divHTML
+    +chartHTML+divHTML+macHTML
     +'<div class="bar-wrap"><div class="bar-fill" style="width:'+pct+'%;background:'+barColor(v)+'"></div>'
     +'<div class="bar-mark" style="left:'+threshold+'%"></div></div>'
     +'<div class="card-foot"><span>'+pLabel(s.period)+' · 최근 '+chartDisplayLen+'일</span><span>'+footRight+'</span></div>';
