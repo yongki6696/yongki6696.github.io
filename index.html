@@ -644,9 +644,18 @@ function loadStock(s){
   return fetchYahoo(s.ticker,s.period)
   .then(function(data){
     var chart=data.chart.result[0];
+    var meta=chart.meta||{};
+
+    // ── 요청한 티커와 실제 반환된 심볼이 다르면 즉시 에러 처리 ──
+    // 존재하지 않는 종목코드(예: 잘못된 .KQ/.KS 조합)를 요청하면 Yahoo가
+    // 전혀 다른 엉뚱한 종목/상품 데이터를 대신 반환하는 경우가 있어(예: "0P0000B4P4" 같은 펀드 코드),
+    // 이를 그대로 표시하면 완전히 틀린 가격/RSI가 나타남 -> 심볼 일치 여부로 사전 차단.
+    if (meta.symbol && meta.symbol.toUpperCase() !== s.ticker.toUpperCase()) {
+      throw new Error('존재하지 않는 종목코드입니다');
+    }
+
     var closes=chart.indicators.quote[0].close;
     var timestamps=chart.timestamp||[];
-    var meta=chart.meta||{};
 
     var validIdx=[];
     var valid=[];
