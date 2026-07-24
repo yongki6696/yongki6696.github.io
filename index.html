@@ -646,11 +646,15 @@ function loadStock(s){
     var chart=data.chart.result[0];
     var meta=chart.meta||{};
 
-    // ── 요청한 티커와 실제 반환된 심볼이 다르면 즉시 에러 처리 ──
+    // ── 요청한 티커와 실제 반환된 심볼/상품 종류가 다르면 즉시 에러 처리 ──
     // 존재하지 않는 종목코드(예: 잘못된 .KQ/.KS 조합)를 요청하면 Yahoo가
-    // 전혀 다른 엉뚱한 종목/상품 데이터를 대신 반환하는 경우가 있어(예: "0P0000B4P4" 같은 펀드 코드),
-    // 이를 그대로 표시하면 완전히 틀린 가격/RSI가 나타남 -> 심볼 일치 여부로 사전 차단.
+    // 전혀 다른 엉뚱한 데이터를 대신 반환하는데, 이때 meta.symbol은 요청값과 우연히 같게 나올 수 있어
+    // 심볼 비교만으로는 걸러지지 않음. instrumentType까지 함께 확인해야 확실히 차단됨
+    // (정상 주식/ETF는 EQUITY 또는 ETF인데, 잘못된 코드는 엉뚱하게 MUTUALFUND 등으로 매칭되어 옴).
     if (meta.symbol && meta.symbol.toUpperCase() !== s.ticker.toUpperCase()) {
+      throw new Error('존재하지 않는 종목코드입니다');
+    }
+    if (meta.instrumentType && meta.instrumentType !== 'EQUITY' && meta.instrumentType !== 'ETF') {
       throw new Error('존재하지 않는 종목코드입니다');
     }
 
