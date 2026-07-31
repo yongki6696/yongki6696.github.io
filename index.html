@@ -1050,7 +1050,7 @@ function toggleEdit(){
   var today=kst.toISOString().slice(0,10).replace(/-/g,'');
   var todayStr=kst.toISOString().slice(0,10);
 
-  function fmt(n){if(!n||isNaN(n))return '—';n=parseInt(n);return n>=10000?(n/10000).toFixed(1)+'만':n.toLocaleString();}
+  function fmt(n){if(!n||isNaN(n))return '—';n=parseInt(n);return n.toLocaleString();}
   function show(t,tot){
     var a=document.getElementById('v-today'); if(a) a.textContent=fmt(t);
     var b=document.getElementById('v-total'); if(b) b.textContent=fmt(tot);
