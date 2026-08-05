@@ -300,6 +300,8 @@ body.edit-mode .edit-hint { display:block; }
   -webkit-appearance:none; flex-shrink:0;
 }
 .chat-nick-save:active { transform:scale(0.96); }
+.chat-nick-save:disabled { opacity:.5; }
+.chat-nick-error { color:var(--danger); font-size:11px; margin:-3px 0 10px 2px; }
 .chat-msgs {
   height:220px; overflow-y:auto; -webkit-overflow-scrolling:touch;
   display:flex; flex-direction:column; gap:9px; padding:2px 2px 4px;
@@ -447,6 +449,7 @@ body.edit-mode .edit-hint { display:block; }
       <input type="text" class="chat-nick-input" id="chat-nick-input" maxlength="12" placeholder="닉네임 입력 (최대 12자)">
       <button type="button" class="chat-nick-save" id="chat-nick-save-btn">저장</button>
     </div>
+    <div class="chat-nick-error hidden" id="chat-nick-error">이미 사용 중인 닉네임이에요. 다른 닉네임을 입력해주세요.</div>
     <div class="chat-msgs" id="chat-msgs">
       <div class="chat-empty">아직 메시지가 없어요. 첫 메시지를 남겨보세요!</div>
     </div>
@@ -1164,6 +1167,7 @@ function toggleEdit(){
 (function initChat(){
   var FB = 'https://rsingtime-3e98f-default-rtdb.firebaseio.com';
   var NICK_KEY = 'rst_chat_nick';
+  var DEVICE_KEY = 'rst_chat_device';
   var ADJ = ['불타는','존버하는','물린','익절한','손절한','풀매수','영끌한','떡상기원','떡락방지','한강뷰','존버킹','매수타이밍','고점매수','저점매수','물타기','불장러','줍줍하는','존버중인'];
   var NOUN = ['개미','황소','곰','고래','투자자','트레이더','존버러','승부사','청년개미','슈퍼개미','불개미','스마트머니'];
 
@@ -1178,9 +1182,52 @@ function toggleEdit(){
     if(!n){ n = randNick(); localStorage.setItem(NICK_KEY, n); }
     return n;
   }
+  function getDeviceId(){
+    var id = localStorage.getItem(DEVICE_KEY);
+    if(!id){ id = 'd'+Date.now().toString(36)+Math.random().toString(36).slice(2,10); localStorage.setItem(DEVICE_KEY, id); }
+    return id;
+  }
+  function nickKey(nick){
+    // Firebase 키 금지문자(. # $ / [ ]) 및 %를 안전한 문자로 치환
+    return encodeURIComponent(nick).replace(/[.#$/\[\]%]/g, '_');
+  }
+  // 닉네임 예약 시도: 비어있거나 내 소유면 true(예약 성공), 남이 쓰고 있으면 false
+  function tryClaim(nick){
+    var key = nickKey(nick);
+    return fetch(FB+'/chat/nicknames/'+key+'.json')
+      .then(function(r){ return r.json(); })
+      .then(function(entry){
+        if(entry && entry.owner && entry.owner !== getDeviceId()) return false;
+        return fetch(FB+'/chat/nicknames/'+key+'.json', {
+          method:'PUT', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ nick:nick, owner:getDeviceId(), t:Date.now() })
+        }).then(function(){ return true; });
+      });
+  }
+  function releaseNick(nick){
+    var key = nickKey(nick);
+    fetch(FB+'/chat/nicknames/'+key+'.json')
+      .then(function(r){ return r.json(); })
+      .then(function(entry){
+        if(entry && entry.owner === getDeviceId()){
+          return fetch(FB+'/chat/nicknames/'+key+'.json', {method:'DELETE'});
+        }
+      }).catch(function(){});
+  }
   function renderNick(){
     var el = document.getElementById('chat-nick-label');
     if(el) el.textContent = getNick();
+  }
+  // 첫 방문 시 자동 배정된 랜덤 닉네임도 조용히 예약 시도 (실패하면 다른 랜덤으로 재시도)
+  function ensureNickClaimed(attempt){
+    attempt = attempt || 0;
+    var nick = getNick();
+    tryClaim(nick).then(function(ok){
+      if(ok){ renderNick(); return; }
+      if(attempt >= 5){ renderNick(); return; }
+      localStorage.setItem(NICK_KEY, randNick());
+      ensureNickClaimed(attempt+1);
+    }).catch(function(){ renderNick(); });
   }
 
   function escapeHTML(s){
@@ -1251,7 +1298,7 @@ function toggleEdit(){
     });
   }
 
-  renderNick();
+  ensureNickClaimed();
   loadMsgs();
   setInterval(loadMsgs, 4000);
 
@@ -1262,14 +1309,21 @@ function toggleEdit(){
   var nickInput = document.getElementById('chat-nick-input');
   var viewRow = document.getElementById('chat-nick-view');
   var editRow = document.getElementById('chat-nick-edit-row');
+  var errBox = document.getElementById('chat-nick-error');
 
   if(sendBtn) sendBtn.addEventListener('click', sendMsg);
   if(chatInput) chatInput.addEventListener('keydown', function(e){
     if(e.key==='Enter'){ e.preventDefault(); sendMsg(); }
   });
 
+  function closeNickEdit(){
+    if(viewRow) viewRow.classList.remove('hidden');
+    if(editRow) editRow.classList.add('hidden');
+    if(errBox) errBox.classList.add('hidden');
+  }
   function openNickEdit(){
     if(nickInput) nickInput.value = getNick();
+    if(errBox) errBox.classList.add('hidden');
     if(viewRow) viewRow.classList.add('hidden');
     if(editRow) editRow.classList.remove('hidden');
     if(nickInput){ nickInput.focus(); nickInput.select(); }
@@ -1278,10 +1332,24 @@ function toggleEdit(){
     var v = (nickInput && nickInput.value || '').trim();
     if(!v) v = randNick();
     if(v.length > 12) v = v.slice(0,12);
-    localStorage.setItem(NICK_KEY, v);
-    renderNick();
-    if(viewRow) viewRow.classList.remove('hidden');
-    if(editRow) editRow.classList.add('hidden');
+    var current = getNick();
+    if(errBox) errBox.classList.add('hidden');
+    if(v === current){ closeNickEdit(); return; }
+    if(saveBtn) saveBtn.disabled = true;
+    tryClaim(v).then(function(ok){
+      if(!ok){
+        if(errBox) errBox.classList.remove('hidden');
+        return;
+      }
+      releaseNick(current);
+      localStorage.setItem(NICK_KEY, v);
+      renderNick();
+      closeNickEdit();
+    }).catch(function(){
+      if(errBox){ errBox.textContent = '확인 중 오류가 발생했어요. 다시 시도해주세요.'; errBox.classList.remove('hidden'); }
+    }).then(function(){
+      if(saveBtn) saveBtn.disabled = false;
+    });
   }
   if(editBtn) editBtn.addEventListener('click', openNickEdit);
   if(saveBtn) saveBtn.addEventListener('click', saveNick);
