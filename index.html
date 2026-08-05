@@ -272,6 +272,45 @@ body.edit-mode .edit-hint { display:block; }
 .rootguide-table td { padding:8px 6px; border-bottom:1px solid var(--border); color:var(--text2); }
 .rootguide-table td:first-child { font-weight:700; color:var(--text); white-space:nowrap; }
 .rootguide-table tr:last-child td { border-bottom:none; }
+
+/* ── 커뮤니티 채팅 ── */
+.chat-box {
+  background:var(--card); border:1px solid var(--border);
+  border-radius:16px; padding:16px 16px 14px; margin-top:20px;
+}
+.chat-box h2 { font-size:15px; font-weight:700; margin-bottom:10px; }
+.chat-nick-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.chat-nick { font-size:12px; color:var(--text2); }
+.chat-nick b { color:var(--accent2); font-weight:700; }
+.chat-nick-refresh {
+  background:var(--card2); border:1px solid var(--border); border-radius:20px;
+  padding:5px 10px; color:var(--text2); font-size:11px; cursor:pointer;
+  touch-action:manipulation; -webkit-appearance:none;
+}
+.chat-nick-refresh:active { background:#222; }
+.chat-msgs {
+  height:220px; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  display:flex; flex-direction:column; gap:9px; padding:2px 2px 4px;
+  border-top:1px solid var(--border); border-bottom:1px solid var(--border);
+}
+.chat-msg { font-size:13px; line-height:1.5; word-break:break-word; }
+.chat-msg .nick { color:var(--accent2); font-weight:700; margin-right:6px; }
+.chat-msg .txt { color:var(--text); }
+.chat-msg .time { color:var(--muted); font-size:10px; margin-left:6px; white-space:nowrap; }
+.chat-empty { color:var(--muted); font-size:12px; text-align:center; padding:32px 0; }
+.chat-input-row { display:flex; gap:8px; margin-top:12px; }
+.chat-input {
+  flex:1; min-width:0; background:var(--card2); border:1px solid var(--border); border-radius:12px;
+  padding:11px 13px; color:var(--text); font-size:13px; outline:none;
+}
+.chat-input::placeholder { color:var(--muted); }
+.chat-send {
+  background:var(--accent); border:none; border-radius:12px; padding:0 18px;
+  color:#fff; font-size:13px; font-weight:700; cursor:pointer; touch-action:manipulation;
+  -webkit-appearance:none; transition:transform .1s, opacity .15s; flex-shrink:0;
+}
+.chat-send:active { transform:scale(0.96); }
+.chat-send:disabled { opacity:.5; }
 </style>
 </head>
 <body>
@@ -386,6 +425,21 @@ body.edit-mode .edit-hint { display:block; }
       <tr><td>71 이상</td><td>분할매도! 🥸 — 과매수 구간, 차익 실현 고려</td></tr>
     </table>
   </div>
+  <div class="chat-box">
+    <h2>💬 실시간 채팅방</h2>
+    <div class="chat-nick-row">
+      <div class="chat-nick">닉네임: <b id="chat-nick-label">—</b></div>
+      <button type="button" class="chat-nick-refresh" id="chat-nick-refresh">🔄 닉네임 변경</button>
+    </div>
+    <div class="chat-msgs" id="chat-msgs">
+      <div class="chat-empty">아직 메시지가 없어요. 첫 메시지를 남겨보세요!</div>
+    </div>
+    <div class="chat-input-row">
+      <input type="text" class="chat-input" id="chat-input" placeholder="메시지를 입력하세요" maxlength="200">
+      <button type="button" class="chat-send" id="chat-send">전송</button>
+    </div>
+  </div>
+
   <a href="mailto:yongki6696@naver.com" style="display:block;margin-top:16px;">
     <img id="ad-banner-bottom" src="ad-banner-300x250.png" alt="광고 협업 문의" style="width:100%;max-width:300px;height:auto;border-radius:14px;display:block;margin:0 auto;">
   </a>
@@ -1085,6 +1139,116 @@ function toggleEdit(){
     var td=null; try{td=JSON.parse(localStorage.getItem('rst_today')||'null');}catch(e){}
     var tc=td&&td.date===todayStr?td.count:0;
     show(tc,tot);
+  });
+})();
+
+// ══════════════════════════════════════════
+// 커뮤니티 채팅 (Firebase 재사용, 즉석 닉네임)
+// ══════════════════════════════════════════
+(function initChat(){
+  var FB = 'https://rsingtime-3e98f-default-rtdb.firebaseio.com';
+  var NICK_KEY = 'rst_chat_nick';
+  var ADJ = ['불타는','존버하는','물린','익절한','손절한','풀매수','영끌한','떡상기원','떡락방지','한강뷰','존버킹','매수타이밍','고점매수','저점매수','물타기','불장러','줍줍하는','존버중인'];
+  var NOUN = ['개미','황소','곰','고래','투자자','트레이더','존버러','승부사','청년개미','슈퍼개미','불개미','스마트머니'];
+
+  function randNick(){
+    var a = ADJ[Math.floor(Math.random()*ADJ.length)];
+    var n = NOUN[Math.floor(Math.random()*NOUN.length)];
+    var num = Math.floor(Math.random()*9000)+1000;
+    return a+n+num;
+  }
+  function getNick(){
+    var n = localStorage.getItem(NICK_KEY);
+    if(!n){ n = randNick(); localStorage.setItem(NICK_KEY, n); }
+    return n;
+  }
+  function renderNick(){
+    var el = document.getElementById('chat-nick-label');
+    if(el) el.textContent = getNick();
+  }
+
+  function escapeHTML(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function timeLabel(ts){
+    var d = new Date(ts||Date.now());
+    var hh = d.getHours(), mm = d.getMinutes();
+    var ap = hh < 12 ? '오전' : '오후';
+    var h12 = hh % 12; if(h12===0) h12 = 12;
+    return ap+' '+h12+':'+(mm<10?'0':'')+mm;
+  }
+
+  var lastKey = null;
+  function renderMsgs(obj){
+    var wrap = document.getElementById('chat-msgs');
+    if(!wrap) return;
+    if(!obj){
+      if(lastKey !== null) return; // 이미 렌더된 상태에서 일시적 오류로 null 오면 무시
+      wrap.innerHTML = '<div class="chat-empty">아직 메시지가 없어요. 첫 메시지를 남겨보세요!</div>';
+      return;
+    }
+    var keys = Object.keys(obj).sort();
+    var newLast = keys[keys.length-1];
+    if(newLast === lastKey) return;
+    lastKey = newLast;
+    var nearBottom = true;
+    try{ nearBottom = (wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight) < 60; }catch(e){}
+    var html = keys.map(function(k){
+      var m = obj[k];
+      if(!m || !m.n || !m.m) return '';
+      return '<div class="chat-msg"><span class="nick">'+escapeHTML(m.n)+'</span><span class="txt">'+escapeHTML(m.m)+'</span><span class="time">'+timeLabel(m.t)+'</span></div>';
+    }).join('');
+    wrap.innerHTML = html || '<div class="chat-empty">아직 메시지가 없어요. 첫 메시지를 남겨보세요!</div>';
+    if(nearBottom) wrap.scrollTop = wrap.scrollHeight;
+  }
+
+  function loadMsgs(){
+    fetch(FB+'/chat/messages.json?orderBy="$key"&limitToLast=50')
+      .then(function(r){ return r.json(); })
+      .then(renderMsgs)
+      .catch(function(){});
+  }
+
+  var sending = false;
+  function sendMsg(){
+    if(sending) return;
+    var input = document.getElementById('chat-input');
+    if(!input) return;
+    var txt = (input.value||'').trim();
+    if(!txt) return;
+    if(txt.length > 200) txt = txt.slice(0,200);
+    sending = true;
+    var btn = document.getElementById('chat-send');
+    if(btn) btn.disabled = true;
+    fetch(FB+'/chat/messages.json', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ n:getNick(), m:txt, t:Date.now() })
+    }).then(function(){
+      input.value = '';
+      loadMsgs();
+    }).catch(function(){}).then(function(){
+      sending = false;
+      if(btn) btn.disabled = false;
+    });
+  }
+
+  renderNick();
+  loadMsgs();
+  setInterval(loadMsgs, 4000);
+
+  var sendBtn = document.getElementById('chat-send');
+  var chatInput = document.getElementById('chat-input');
+  var refreshBtn = document.getElementById('chat-nick-refresh');
+  if(sendBtn) sendBtn.addEventListener('click', sendMsg);
+  if(chatInput) chatInput.addEventListener('keydown', function(e){
+    if(e.key==='Enter'){ e.preventDefault(); sendMsg(); }
+  });
+  if(refreshBtn) refreshBtn.addEventListener('click', function(){
+    localStorage.setItem(NICK_KEY, randNick());
+    renderNick();
   });
 })();
 
