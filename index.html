@@ -288,6 +288,18 @@ body.edit-mode .edit-hint { display:block; }
   touch-action:manipulation; -webkit-appearance:none;
 }
 .chat-nick-refresh:active { background:#222; }
+.chat-nick-edit-row { display:flex; gap:8px; margin-bottom:10px; }
+.chat-nick-input {
+  flex:1; min-width:0; background:var(--card2); border:1px solid var(--border); border-radius:10px;
+  padding:9px 12px; color:var(--text); font-size:13px; outline:none;
+}
+.chat-nick-input::placeholder { color:var(--muted); }
+.chat-nick-save {
+  background:var(--accent); border:none; border-radius:10px; padding:0 16px;
+  color:#fff; font-size:12px; font-weight:700; cursor:pointer; touch-action:manipulation;
+  -webkit-appearance:none; flex-shrink:0;
+}
+.chat-nick-save:active { transform:scale(0.96); }
 .chat-msgs {
   height:220px; overflow-y:auto; -webkit-overflow-scrolling:touch;
   display:flex; flex-direction:column; gap:9px; padding:2px 2px 4px;
@@ -426,10 +438,14 @@ body.edit-mode .edit-hint { display:block; }
     </table>
   </div>
   <div class="chat-box">
-    <h2>💬 실시간 채팅방</h2>
-    <div class="chat-nick-row">
+    <h2>💬 라이징타임 채팅방</h2>
+    <div class="chat-nick-row" id="chat-nick-view">
       <div class="chat-nick">닉네임: <b id="chat-nick-label">—</b></div>
-      <button type="button" class="chat-nick-refresh" id="chat-nick-refresh">🔄 닉네임 변경</button>
+      <button type="button" class="chat-nick-refresh" id="chat-nick-edit-btn">✏️ 닉네임 수정</button>
+    </div>
+    <div class="chat-nick-edit-row hidden" id="chat-nick-edit-row">
+      <input type="text" class="chat-nick-input" id="chat-nick-input" maxlength="12" placeholder="닉네임 입력 (최대 12자)">
+      <button type="button" class="chat-nick-save" id="chat-nick-save-btn">저장</button>
     </div>
     <div class="chat-msgs" id="chat-msgs">
       <div class="chat-empty">아직 메시지가 없어요. 첫 메시지를 남겨보세요!</div>
@@ -1241,14 +1257,36 @@ function toggleEdit(){
 
   var sendBtn = document.getElementById('chat-send');
   var chatInput = document.getElementById('chat-input');
-  var refreshBtn = document.getElementById('chat-nick-refresh');
+  var editBtn = document.getElementById('chat-nick-edit-btn');
+  var saveBtn = document.getElementById('chat-nick-save-btn');
+  var nickInput = document.getElementById('chat-nick-input');
+  var viewRow = document.getElementById('chat-nick-view');
+  var editRow = document.getElementById('chat-nick-edit-row');
+
   if(sendBtn) sendBtn.addEventListener('click', sendMsg);
   if(chatInput) chatInput.addEventListener('keydown', function(e){
     if(e.key==='Enter'){ e.preventDefault(); sendMsg(); }
   });
-  if(refreshBtn) refreshBtn.addEventListener('click', function(){
-    localStorage.setItem(NICK_KEY, randNick());
+
+  function openNickEdit(){
+    if(nickInput) nickInput.value = getNick();
+    if(viewRow) viewRow.classList.add('hidden');
+    if(editRow) editRow.classList.remove('hidden');
+    if(nickInput){ nickInput.focus(); nickInput.select(); }
+  }
+  function saveNick(){
+    var v = (nickInput && nickInput.value || '').trim();
+    if(!v) v = randNick();
+    if(v.length > 12) v = v.slice(0,12);
+    localStorage.setItem(NICK_KEY, v);
     renderNick();
+    if(viewRow) viewRow.classList.remove('hidden');
+    if(editRow) editRow.classList.add('hidden');
+  }
+  if(editBtn) editBtn.addEventListener('click', openNickEdit);
+  if(saveBtn) saveBtn.addEventListener('click', saveNick);
+  if(nickInput) nickInput.addEventListener('keydown', function(e){
+    if(e.key==='Enter'){ e.preventDefault(); saveNick(); }
   });
 })();
 
