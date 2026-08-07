@@ -313,7 +313,28 @@ body.edit-mode .edit-hint { display:block; }
 .chat-msg .txt { color:var(--text); }
 .chat-msg .time { color:var(--muted); font-size:10px; margin-left:6px; white-space:nowrap; }
 .chat-empty { color:var(--muted); font-size:12px; text-align:center; padding:32px 0; }
+.chat-img-wrap { margin-top:6px; }
+.chat-img {
+  max-width:180px; max-height:180px; border-radius:10px; display:block;
+  border:1px solid var(--border); cursor:pointer;
+}
+.chat-preview {
+  display:flex; align-items:center; gap:10px; margin-top:10px;
+  padding:8px; background:var(--card2); border:1px solid var(--border); border-radius:12px;
+}
+.chat-preview img { width:52px; height:52px; object-fit:cover; border-radius:8px; }
+.chat-preview-remove {
+  margin-left:auto; background:none; border:1px solid var(--border); border-radius:50%;
+  width:26px; height:26px; color:var(--text2); font-size:13px; cursor:pointer;
+  touch-action:manipulation; -webkit-appearance:none; flex-shrink:0;
+}
 .chat-input-row { display:flex; gap:8px; margin-top:12px; }
+.chat-attach-btn {
+  background:var(--card2); border:1px solid var(--border); border-radius:12px;
+  width:42px; height:42px; font-size:18px; cursor:pointer; flex-shrink:0;
+  touch-action:manipulation; -webkit-appearance:none; display:flex; align-items:center; justify-content:center;
+}
+.chat-attach-btn:active { background:#222; }
 .chat-input {
   flex:1; min-width:0; background:var(--card2); border:1px solid var(--border); border-radius:12px;
   padding:11px 13px; color:var(--text); font-size:13px; outline:none;
@@ -326,6 +347,11 @@ body.edit-mode .edit-hint { display:block; }
 }
 .chat-send:active { transform:scale(0.96); }
 .chat-send:disabled { opacity:.5; }
+.chat-lightbox {
+  position:fixed; inset:0; background:rgba(0,0,0,.92); z-index:9999;
+  display:flex; align-items:center; justify-content:center; padding:24px;
+}
+.chat-lightbox img { max-width:100%; max-height:100%; border-radius:10px; }
 </style>
 </head>
 <body>
@@ -454,10 +480,20 @@ body.edit-mode .edit-hint { display:block; }
     <div class="chat-msgs" id="chat-msgs">
       <div class="chat-empty">아직 메시지가 없어요. 첫 메시지를 남겨보세요!</div>
     </div>
+    <div class="chat-preview hidden" id="chat-preview">
+      <img id="chat-preview-img" src="" alt="첨부 이미지 미리보기">
+      <button type="button" class="chat-preview-remove" id="chat-preview-remove">✕</button>
+    </div>
     <div class="chat-input-row">
+      <button type="button" class="chat-attach-btn" id="chat-attach-btn" aria-label="사진 첨부">📷</button>
+      <input type="file" id="chat-file-input" accept="image/*" class="hidden">
       <input type="text" class="chat-input" id="chat-input" placeholder="메시지를 입력하세요" maxlength="200">
       <button type="button" class="chat-send" id="chat-send">전송</button>
     </div>
+  </div>
+
+  <div class="chat-lightbox hidden" id="chat-lightbox">
+    <img id="chat-lightbox-img" src="" alt="이미지 확대보기">
   </div>
 
   <a href="mailto:yongki6696@gmail.com" style="display:block;margin-top:16px;">
@@ -1245,53 +1281,133 @@ function toggleEdit(){
   }
 
   var lastKey = null;
-  function renderMsgs(obj){
+  var msgCache = {}; // key -> message, 로컬 누적 캐시 (동일 데이터 반복 다운로드 방지용)
+
+  function renderMsgs(){
     var wrap = document.getElementById('chat-msgs');
     if(!wrap) return;
-    if(!obj){
-      if(lastKey !== null) return; // 이미 렌더된 상태에서 일시적 오류로 null 오면 무시
+    var keys = Object.keys(msgCache).sort();
+    if(!keys.length){
       wrap.innerHTML = '<div class="chat-empty">아직 메시지가 없어요. 첫 메시지를 남겨보세요!</div>';
       return;
     }
-    var keys = Object.keys(obj).sort();
-    var newLast = keys[keys.length-1];
-    if(newLast === lastKey) return;
-    lastKey = newLast;
     var nearBottom = true;
     try{ nearBottom = (wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight) < 60; }catch(e){}
     var html = keys.map(function(k){
-      var m = obj[k];
-      if(!m || !m.n || !m.m) return '';
-      return '<div class="chat-msg"><span class="nick">'+escapeHTML(m.n)+'</span><span class="txt">'+escapeHTML(m.m)+'</span><span class="time">'+timeLabel(m.t)+'</span></div>';
+      var m = msgCache[k];
+      if(!m || !m.n || (!m.m && !m.img)) return '';
+      var textHTML = m.m ? '<span class="txt">'+escapeHTML(m.m)+'</span>' : '';
+      var imgHTML = m.img ? '<div class="chat-img-wrap"><img class="chat-img" src="'+m.img+'" loading="lazy"></div>' : '';
+      return '<div class="chat-msg"><span class="nick">'+escapeHTML(m.n)+'</span>'+textHTML+'<span class="time">'+timeLabel(m.t)+'</span>'+imgHTML+'</div>';
     }).join('');
     wrap.innerHTML = html || '<div class="chat-empty">아직 메시지가 없어요. 첫 메시지를 남겨보세요!</div>';
     if(nearBottom) wrap.scrollTop = wrap.scrollHeight;
   }
 
+  // 최초 1회만 최근 50개를 통째로 받고, 그 이후엔 마지막으로 받은 키 이후의
+  // '새 메시지'만 증분으로 가져옴 — 사진이 쌓여도 매 폴링마다 전체를 다시
+  // 내려받지 않아서 데이터 사용량과 처리 부담이 커지지 않음
   function loadMsgs(){
-    fetch(FB+'/chat/messages.json?orderBy="$key"&limitToLast=50')
-      .then(function(r){ return r.json(); })
-      .then(renderMsgs)
-      .catch(function(){});
+    var url = lastKey
+      ? FB+'/chat/messages.json?orderBy="$key"&startAt="'+encodeURIComponent(lastKey)+'"'
+      : FB+'/chat/messages.json?orderBy="$key"&limitToLast=50';
+    fetch(url).then(function(r){ return r.json(); }).then(function(obj){
+      if(!obj){ if(!lastKey) renderMsgs(); return; }
+      var keys = Object.keys(obj);
+      if(!keys.length) return;
+      var added = false;
+      keys.forEach(function(k){
+        if (k === lastKey) return; // startAt은 해당 키를 포함해서 돌려주므로 중복 제외
+        msgCache[k] = obj[k];
+        added = true;
+      });
+      var allKeys = Object.keys(msgCache).sort();
+      if(allKeys.length) lastKey = allKeys[allKeys.length-1];
+      // 캐시도 최근 50개까지만 유지 (메모리/DOM 크기 방지)
+      if(allKeys.length > 50){
+        allKeys.slice(0, allKeys.length-50).forEach(function(k){ delete msgCache[k]; });
+      }
+      if(added || !lastKey) renderMsgs();
+    }).catch(function(){});
   }
 
   var sending = false;
+  var pendingImage = null; // 첨부 대기 중인 이미지 (data URL)
+
+  function showPreview(dataUrl){
+    pendingImage = dataUrl;
+    var box = document.getElementById('chat-preview');
+    var img = document.getElementById('chat-preview-img');
+    if(img) img.src = dataUrl;
+    if(box) box.classList.remove('hidden');
+  }
+  function clearPreview(){
+    pendingImage = null;
+    var box = document.getElementById('chat-preview');
+    var img = document.getElementById('chat-preview-img');
+    if(img) img.src = '';
+    if(box) box.classList.add('hidden');
+  }
+
+  // 이미지를 리사이즈+압축해서 data URL로 변환 (Firebase Storage 없이 DB에 직접 저장하기 위함)
+  function compressImage(file, maxDim, quality){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onload = function(e){
+        var img = new Image();
+        img.onload = function(){
+          var w = img.width, h = img.height;
+          if (w > maxDim || h > maxDim){
+            if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+            else { w = Math.round(w * maxDim / h); h = maxDim; }
+          }
+          var canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          var ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          try { resolve(canvas.toDataURL('image/jpeg', quality)); }
+          catch(err){ reject(err); }
+        };
+        img.onerror = reject;
+        img.src = e.target.result;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function handleFileSelect(file){
+    if (!file) return;
+    if (file.type.indexOf('image/') !== 0) { alert('이미지 파일만 첨부할 수 있어요.'); return; }
+    compressImage(file, 720, 0.6).then(function(dataUrl){
+      if (dataUrl.length > 400000) {
+        return compressImage(file, 560, 0.45).then(showPreview);
+      }
+      showPreview(dataUrl);
+    }).catch(function(){
+      alert('이미지를 불러오는 중 문제가 발생했어요.');
+    });
+  }
+
   function sendMsg(){
     if(sending) return;
     var input = document.getElementById('chat-input');
     if(!input) return;
     var txt = (input.value||'').trim();
-    if(!txt) return;
     if(txt.length > 200) txt = txt.slice(0,200);
+    if(!txt && !pendingImage) return;
     sending = true;
     var btn = document.getElementById('chat-send');
     if(btn) btn.disabled = true;
+    var payload = { n:getNick(), m: txt || '📷 사진', t:Date.now() };
+    if (pendingImage) payload.img = pendingImage;
     fetch(FB+'/chat/messages.json', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ n:getNick(), m:txt, t:Date.now() })
+      body: JSON.stringify(payload)
     }).then(function(){
       input.value = '';
+      clearPreview();
       loadMsgs();
     }).catch(function(){}).then(function(){
       sending = false;
@@ -1316,6 +1432,35 @@ function toggleEdit(){
   if(chatInput) chatInput.addEventListener('keydown', function(e){
     if(e.key==='Enter'){ e.preventDefault(); sendMsg(); }
   });
+
+  // ── 사진 첨부 ──
+  var attachBtn = document.getElementById('chat-attach-btn');
+  var fileInput = document.getElementById('chat-file-input');
+  var previewRemoveBtn = document.getElementById('chat-preview-remove');
+  if(attachBtn && fileInput) attachBtn.addEventListener('click', function(){ fileInput.click(); });
+  if(fileInput) fileInput.addEventListener('change', function(){
+    var file = this.files && this.files[0];
+    handleFileSelect(file);
+    this.value = ''; // 같은 파일을 다시 선택해도 change 이벤트가 발생하도록 초기화
+  });
+  if(previewRemoveBtn) previewRemoveBtn.addEventListener('click', clearPreview);
+
+  // ── 이미지 확대보기(라이트박스), 채팅창 안 이미지들은 위임 방식으로 처리 ──
+  var msgsWrap = document.getElementById('chat-msgs');
+  var lightbox = document.getElementById('chat-lightbox');
+  var lightboxImg = document.getElementById('chat-lightbox-img');
+  if(msgsWrap && lightbox && lightboxImg){
+    msgsWrap.addEventListener('click', function(e){
+      var img = e.target.closest('.chat-img');
+      if(!img) return;
+      lightboxImg.src = img.src;
+      lightbox.classList.remove('hidden');
+    });
+    lightbox.addEventListener('click', function(){
+      lightbox.classList.add('hidden');
+      lightboxImg.src = '';
+    });
+  }
 
   function closeNickEdit(){
     if(viewRow) viewRow.classList.remove('hidden');
