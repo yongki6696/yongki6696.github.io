@@ -2710,7 +2710,9 @@ function krsearchBindTabs(dd){
     function switchTab(e){
       e.preventDefault(); e.stopPropagation();
       krsearchActiveTab = tab.getAttribute('data-tab');
-      krsearchShowAll();
+      var inp = document.getElementById('inp-ticker');
+      var val = inp ? inp.value.trim() : '';
+      if (val) { krsearchRender(val); } else { krsearchShowAll(); }
     }
     tab.addEventListener('touchend', switchTab, {passive:false});
     tab.addEventListener('mousedown', switchTab);
@@ -2723,16 +2725,22 @@ function krsearchRender(query){
   var q = query.trim();
   if (!q) { dd.classList.remove('krsearch-show'); return; }
 
-  var results = KRSEARCH_DB.filter(function(s){ return s.n.toLowerCase().indexOf(q.toLowerCase()) !== -1; }).slice(0, 8);
+  var list = krsearchActiveTab === 'kr' ? KRSEARCH_DB
+    : krsearchActiveTab === 'us' ? US_STOCK_DB
+    : CRYPTO_DB;
 
-  if (!results.length) {
-    dd.innerHTML = '<div class="krsearch-empty">검색 결과 없음<br>종목코드로 직접 입력해주세요 (예: 005930.KS)</div>';
-    dd.classList.add('krsearch-show');
-    return;
-  }
+  var qLower = q.toLowerCase();
+  var results = list.filter(function(s){
+    return s.n.toLowerCase().indexOf(qLower) !== -1 || s.t.toLowerCase().indexOf(qLower) !== -1;
+  }).slice(0, 8);
 
-  dd.innerHTML = krsearchItemsHTML(results);
+  var body = results.length
+    ? krsearchItemsHTML(results)
+    : '<div class="krsearch-empty">검색 결과 없음<br>종목코드로 직접 입력해주세요 (예: 005930.KS)</div>';
+
+  dd.innerHTML = krsearchTabsHTML() + '<div class="krsearch-list">' + body + '</div>';
   dd.classList.add('krsearch-show');
+  krsearchBindTabs(dd);
 }
 
 function krsearchClose(){
@@ -2746,12 +2754,10 @@ function krsearchClose(){
 
   inp.addEventListener('input', function(){
     var val = this.value;
-    if (krsearchIsKorean(val)) {
-      krsearchRender(val);
-    } else if (!val.trim()) {
+    if (!val.trim()) {
       krsearchShowAll(); // 입력이 비워지면 다시 전체 목록 표시
     } else {
-      krsearchClose();
+      krsearchRender(val); // 한글/영문/숫자 상관없이 항상 검색
     }
   });
 
