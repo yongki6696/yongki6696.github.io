@@ -1794,6 +1794,7 @@ var KRSEARCH_DB = [
   {n:'메탈라이프',t:'327260.KQ'},{n:'멕아이씨에스',t:'058110.KQ'},
   {n:'멜파스',t:'096640.KQ'},{n:'명문제약',t:'017180.KS'},
   {n:'명성티엔에스',t:'257370.KQ'},{n:'명신산업',t:'009900.KS'},
+  {n:'명인제약',t:'317450.KS'},
   {n:'모나리자',t:'012690.KS'},{n:'모나미',t:'005360.KS'},
   {n:'모다이노칩',t:'080420.KQ'},{n:'모두투어',t:'080160.KQ'},
   {n:'모두투어리츠',t:'204210.KS'},{n:'모바일리더',t:'100030.KQ'},
@@ -2722,7 +2723,7 @@ function krsearchRender(query){
   var q = query.trim();
   if (!q) { dd.classList.remove('krsearch-show'); return; }
 
-  var results = KRSEARCH_DB.filter(function(s){ return s.n.indexOf(q) !== -1; }).slice(0, 8);
+  var results = KRSEARCH_DB.filter(function(s){ return s.n.toLowerCase().indexOf(q.toLowerCase()) !== -1; }).slice(0, 8);
 
   if (!results.length) {
     dd.innerHTML = '<div class="krsearch-empty">검색 결과 없음<br>종목코드로 직접 입력해주세요 (예: 005930.KS)</div>';
