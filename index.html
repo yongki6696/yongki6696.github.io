@@ -1328,6 +1328,7 @@ function toggleEdit(){
 
   var lastKey = null;
   var msgCache = {}; // key -> message, 로컬 누적 캐시 (동일 데이터 반복 다운로드 방지용)
+  var isFirstLoad = true; // 최초 로딩(과거 메시지 일괄 불러오기) 때는 알림을 띄우지 않기 위한 플래그
 
   function renderMsgs(){
     var wrap = document.getElementById('chat-msgs');
@@ -1350,6 +1351,18 @@ function toggleEdit(){
     if(nearBottom) wrap.scrollTop = wrap.scrollHeight;
   }
 
+  // 새 메시지 도착 시 화면 상단에 알림 배너(기존 toast 시스템 재사용)를 띄움.
+  // 내가 방금 보낸 메시지는 스스로에게 알림을 띄우지 않도록 제외.
+  function notifyNewMsg(m){
+    if (!m || !m.n) return;
+    if (m.n === getNick()) return;
+    var preview;
+    if (m.img) preview = (m.m && m.m !== '📷 사진') ? (m.m + ' 📷') : '사진을 보냈어요 📷';
+    else preview = m.m || '';
+    if (preview.length > 42) preview = preview.slice(0,42) + '…';
+    if (typeof toast === 'function') toast('💬', escapeHTML(m.n), escapeHTML(preview), 'info', 5000);
+  }
+
   // 최초 1회만 최근 50개를 통째로 받고, 그 이후엔 마지막으로 받은 키 이후의
   // '새 메시지'만 증분으로 가져옴 — 사진이 쌓여도 매 폴링마다 전체를 다시
   // 내려받지 않아서 데이터 사용량과 처리 부담이 커지지 않음
@@ -1358,14 +1371,16 @@ function toggleEdit(){
       ? FB+'/chat/messages.json?orderBy="$key"&startAt="'+encodeURIComponent(lastKey)+'"'
       : FB+'/chat/messages.json?orderBy="$key"&limitToLast=50';
     fetch(url).then(function(r){ return r.json(); }).then(function(obj){
-      if(!obj){ if(!lastKey) renderMsgs(); return; }
+      if(!obj){ if(!lastKey) renderMsgs(); isFirstLoad = false; return; }
       var keys = Object.keys(obj);
-      if(!keys.length) return;
+      if(!keys.length){ isFirstLoad = false; return; }
       var added = false;
+      var freshMsgs = [];
       keys.forEach(function(k){
         if (k === lastKey) return; // startAt은 해당 키를 포함해서 돌려주므로 중복 제외
         msgCache[k] = obj[k];
         added = true;
+        if (!isFirstLoad) freshMsgs.push(obj[k]);
       });
       var allKeys = Object.keys(msgCache).sort();
       if(allKeys.length) lastKey = allKeys[allKeys.length-1];
@@ -1374,6 +1389,8 @@ function toggleEdit(){
         allKeys.slice(0, allKeys.length-50).forEach(function(k){ delete msgCache[k]; });
       }
       if(added || !lastKey) renderMsgs();
+      freshMsgs.forEach(notifyNewMsg);
+      isFirstLoad = false;
     }).catch(function(){});
   }
 
