@@ -213,16 +213,43 @@ body.edit-mode .edit-hint { display:block; }
 .krsearch-dropdown.krsearch-show { display:block; }
 .krsearch-item {
   padding:11px 14px; cursor:pointer;
-  display:flex; justify-content:space-between; align-items:center;
+  display:flex; justify-content:space-between; align-items:center; gap:10px;
   border-bottom:1px solid var(--border); font-size:14px;
   touch-action:manipulation;
 }
 .krsearch-item:last-child { border-bottom:none; }
 .krsearch-item:active { background:#242424; }
-.krsearch-name { font-weight:600; color:var(--text); }
+.krsearch-item-selected { background:rgba(37,99,235,.14); }
+.krsearch-row { display:flex; align-items:center; gap:10px; min-width:0; }
+.krsearch-check {
+  width:19px; height:19px; border-radius:6px; border:1.5px solid var(--border);
+  flex-shrink:0; position:relative; box-sizing:border-box;
+}
+.krsearch-check-on { background:var(--accent); border-color:var(--accent); }
+.krsearch-check-on::after {
+  content:''; position:absolute; left:6px; top:2px; width:5px; height:9px;
+  border:solid #fff; border-width:0 2px 2px 0; transform:rotate(45deg);
+}
+.krsearch-name { font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .krsearch-ticker { font-size:11px; color:var(--muted); font-family:monospace; }
 .krsearch-exch { font-size:10px; margin-left:6px; }
 .krsearch-empty { padding:12px 14px; color:var(--muted); font-size:12px; text-align:center; line-height:1.6; }
+.krsearch-bulkbar {
+  display:none; align-items:center; gap:8px; padding:10px 14px;
+  border-top:1px solid var(--border); background:#1f1f1f;
+  position:sticky; bottom:0;
+}
+.krsearch-bulk-count { font-size:12px; color:var(--text2); flex:1; }
+.krsearch-bulk-clear {
+  background:none; border:1px solid var(--border); border-radius:8px;
+  padding:7px 11px; font-size:12px; color:var(--text2); cursor:pointer; touch-action:manipulation;
+  -webkit-appearance:none;
+}
+.krsearch-bulk-add {
+  background:var(--accent); border:none; border-radius:8px;
+  padding:8px 14px; font-size:12px; font-weight:700; color:#fff; cursor:pointer; touch-action:manipulation;
+  -webkit-appearance:none;
+}
 
 /* ── 검색 탭 + 전체목록 (신규) ── */
 .krsearch-tabs {
@@ -2816,15 +2843,84 @@ function krsearchFormatPrice(ticker, price){
 
 // 현재 선택된 탭 상태 (신규)
 var krsearchActiveTab = 'kr'; // 'kr' 또는 'us'
+// 다중 선택(체크)된 종목들 — ticker를 key로 저장, 검색을 이어가도 유지됨
+var krsearchSelected = {};
 
-// 검색 결과 항목들을 렌더링하고 터치/클릭 이벤트를 바인딩 (기존 로직 재사용, 신규 공용 함수로 분리)
-// 종목 선택 처리 (위임 방식 공용 함수 — dd 하나에만 리스너를 걸고 클릭된 항목을 찾아 처리)
+// 검색 결과 항목 탭 처리 — 체크박스 토글 방식(여러 개 선택 가능)
 function krsearchPickItem(item){
+  var t = item.getAttribute('data-t');
+  var n = item.getAttribute('data-n') || '';
+  if (krsearchSelected[t]) {
+    delete krsearchSelected[t];
+    item.classList.remove('krsearch-item-selected');
+    var chk = item.querySelector('.krsearch-check');
+    if (chk) chk.classList.remove('krsearch-check-on');
+  } else {
+    krsearchSelected[t] = { n:n, t:t };
+    item.classList.add('krsearch-item-selected');
+    var chk2 = item.querySelector('.krsearch-check');
+    if (chk2) chk2.classList.add('krsearch-check-on');
+  }
+  krsearchUpdateBulkBar();
+}
+
+// 선택 개수/버튼 표시 갱신 (전체 리스트를 다시 그리지 않고 바 하나만 갱신)
+function krsearchUpdateBulkBar(){
+  var bar = document.getElementById('krsearch-bulkbar');
+  if (!bar) return;
+  var count = Object.keys(krsearchSelected).length;
+  var countEl = bar.querySelector('.krsearch-bulk-count');
+  if (countEl) countEl.textContent = count + '개 선택됨';
+  bar.style.display = count > 0 ? 'flex' : 'none';
+}
+
+// 선택된 종목들을 한 번에 감시 목록에 추가
+function krsearchBulkAdd(){
+  var list = Object.keys(krsearchSelected).map(function(t){ return krsearchSelected[t]; });
+  if (!list.length) return;
+  var period = document.getElementById('inp-period').value;
+  var addedCount = 0, skipCount = 0;
+  var newlyAdded = [];
+  list.forEach(function(item){
+    if (stocks.find(function(s){ return s.ticker===item.t && s.period===period; })) { skipCount++; return; }
+    var s = { ticker:item.t, period:period, rsi:null, price:null, prevClose:null, name:item.n||'', loading:true, error:null, lastUp:null, chartData:null };
+    stocks.push(s);
+    newlyAdded.push(s);
+    addedCount++;
+  });
+  if (addedCount) { save(); renderAll(); updateStats(); }
+  newlyAdded.forEach(function(s){ loadStock(s); });
+  if (typeof toast === 'function') {
+    if (addedCount) toast('✅', addedCount+'개 종목 추가됨', skipCount ? (skipCount+'개는 이미 있어서 건너뜀') : '데이터 로딩 중…', 'ok', 3000);
+    else toast('ℹ️', '이미 전부 있음', '선택한 종목이 모두 감시 목록에 있어요', 'info');
+  }
+  krsearchSelected = {};
+  krsearchClose();
   var inp = document.getElementById('inp-ticker');
-  inp.value = item.getAttribute('data-t');
+  if (inp) inp.value = '';
+}
+
+// 선택 전체 해제
+function krsearchBulkClear(){
+  krsearchSelected = {};
   var dd = document.getElementById('krsearch-dropdown');
-  dd.classList.remove('krsearch-show');
-  dd.innerHTML = '';
+  if (dd) {
+    Array.prototype.forEach.call(dd.querySelectorAll('.krsearch-item-selected'), function(el){
+      el.classList.remove('krsearch-item-selected');
+      var chk = el.querySelector('.krsearch-check');
+      if (chk) chk.classList.remove('krsearch-check-on');
+    });
+  }
+  krsearchUpdateBulkBar();
+}
+
+// 하단 고정 "선택 종목 담기" 바 HTML
+function krsearchBulkBarHTML(){
+  return '<div class="krsearch-bulkbar" id="krsearch-bulkbar">'
+    + '<span class="krsearch-bulk-count">0개 선택됨</span>'
+    + '<button type="button" class="krsearch-bulk-clear">선택해제</button>'
+    + '<button type="button" class="krsearch-bulk-add">선택 종목 담기</button>'
+    + '</div>';
 }
 
 // 종목 리스트를 HTML 항목들로 변환 (기존 검색결과/전체목록 공통 사용, 신규 공용 함수)
@@ -2838,8 +2934,13 @@ function krsearchItemsHTML(list){
     else if (isKQ) { exch='코스닥'; color='#22c55e'; }
     else if (isCrypto) { exch='코인'; color='#a78bfa'; }
     else { exch='미국'; color='#f59e0b'; }
-    return '<div class="krsearch-item" data-t="'+s.t+'">'
+    var sel = !!krsearchSelected[s.t];
+    var nameAttr = String(s.n).replace(/"/g,'&quot;');
+    return '<div class="krsearch-item'+(sel?' krsearch-item-selected':'')+'" data-t="'+s.t+'" data-n="'+nameAttr+'">'
+      + '<span class="krsearch-row">'
+      + '<span class="krsearch-check'+(sel?' krsearch-check-on':'')+'"></span>'
       + '<span class="krsearch-name">'+s.n+'</span>'
+      + '</span>'
       + '<span><span class="krsearch-ticker">'+s.t+'</span>'
       + '<span class="krsearch-exch" style="color:'+color+'">'+exch+'</span></span>'
       + '</div>';
@@ -2863,9 +2964,11 @@ function krsearchShowAll(){
     : krsearchActiveTab === 'us' ? US_STOCK_DB
     : CRYPTO_DB;
   dd.innerHTML = krsearchTabsHTML()
-    + '<div class="krsearch-list">' + krsearchItemsHTML(list) + '</div>';
+    + '<div class="krsearch-list">' + krsearchItemsHTML(list) + '</div>'
+    + krsearchBulkBarHTML();
   dd.classList.add('krsearch-show');
   krsearchBindTabs(dd);
+  krsearchUpdateBulkBar();
 }
 
 // 탭 클릭 이벤트 바인딩 (신규)
@@ -2902,9 +3005,10 @@ function krsearchRender(query){
     ? krsearchItemsHTML(results)
     : '<div class="krsearch-empty">검색 결과 없음<br>종목코드로 직접 입력해주세요 (예: 005930.KS)</div>';
 
-  dd.innerHTML = krsearchTabsHTML() + '<div class="krsearch-list">' + body + '</div>';
+  dd.innerHTML = krsearchTabsHTML() + '<div class="krsearch-list">' + body + '</div>' + krsearchBulkBarHTML();
   dd.classList.add('krsearch-show');
   krsearchBindTabs(dd);
+  krsearchUpdateBulkBar();
 }
 
 function krsearchClose(){
@@ -2944,10 +3048,18 @@ function krsearchClose(){
     dd.addEventListener('touchend', function(e){
       if (krsearchScrolling) { e.stopPropagation(); krsearchScrolling = false; return; }
       krsearchScrolling = false;
+      var addBtn = e.target.closest('.krsearch-bulk-add');
+      if (addBtn) { e.preventDefault(); e.stopPropagation(); krsearchBulkAdd(); return; }
+      var clearBtn = e.target.closest('.krsearch-bulk-clear');
+      if (clearBtn) { e.preventDefault(); e.stopPropagation(); krsearchBulkClear(); return; }
       var item = e.target.closest('.krsearch-item');
       if (item) { e.preventDefault(); e.stopPropagation(); krsearchPickItem(item); }
     }, {passive:false});
     dd.addEventListener('mousedown', function(e){
+      var addBtn = e.target.closest('.krsearch-bulk-add');
+      if (addBtn) { e.preventDefault(); e.stopPropagation(); krsearchBulkAdd(); return; }
+      var clearBtn = e.target.closest('.krsearch-bulk-clear');
+      if (clearBtn) { e.preventDefault(); e.stopPropagation(); krsearchBulkClear(); return; }
       var item = e.target.closest('.krsearch-item');
       if (item) { e.preventDefault(); e.stopPropagation(); krsearchPickItem(item); }
     });
