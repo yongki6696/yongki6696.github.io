@@ -161,7 +161,7 @@ body.edit-mode .card { cursor:default; }
 .spin { display:inline-block; width:15px; height:15px; border:2px solid var(--border); border-top-color:var(--accent2); border-radius:50%; animation:sp .7s linear infinite; vertical-align:middle; }
 @keyframes sp { to{transform:rotate(360deg)} }
 
-#toasts { position:fixed; top:calc(env(safe-area-inset-top)+92px); right:16px; left:16px; z-index:10000; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
+#toasts { position:fixed; top:140px; right:16px; left:16px; z-index:10000; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
 .toast { background:#1a0808; border:1px solid var(--danger); border-radius:14px; padding:13px 16px; display:flex; gap:10px; align-items:flex-start; box-shadow:0 4px 24px rgba(239,68,68,.18); animation:tin .22s ease; pointer-events:auto; }
 .toast.info { background:#08091a; border-color:var(--accent2); }
 .toast.ok   { background:#081408; border-color:var(--ok); }
@@ -599,6 +599,19 @@ function toast(icon,title,msg,type,ms){
   c.insertBefore(d,c.firstChild);
   setTimeout(function(){ d.style.opacity='0'; d.style.transition='opacity .35s'; setTimeout(function(){ d.parentNode&&d.parentNode.removeChild(d); },380); },ms);
 }
+
+// 알림 배너가 항상 헤더(편집/새로고침 있는 줄) 바로 아래에 오도록,
+// 고정 px값을 추측하는 대신 헤더의 실제 렌더링 높이를 재서 위치시킴
+function positionToasts(){
+  var header = document.querySelector('header');
+  var toastsEl = document.getElementById('toasts');
+  if (!header || !toastsEl) return;
+  var bottom = header.getBoundingClientRect().bottom;
+  toastsEl.style.top = Math.round(bottom + 10) + 'px';
+}
+positionToasts();
+window.addEventListener('resize', positionToasts);
+window.addEventListener('orientationchange', function(){ setTimeout(positionToasts, 200); });
 
 // ══ Yahoo Finance ══
 var RANGE={'1d':'2y','1wk':'5y','1mo':'10y'};
