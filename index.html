@@ -590,12 +590,16 @@ function renderLastUpdate(t) {
 }
 
 // ── 토스트 ──
-function toast(icon,title,msg,type,ms){
+function toast(icon,title,msg,type,ms,onClick){
   ms=ms||5000; type=type||'alert';
   var c=document.getElementById('toasts');
   var d=document.createElement('div');
   d.className='toast'+(type==='info'?' info':type==='ok'?' ok':'');
   d.innerHTML='<div class="t-icon">'+icon+'</div><div><div class="t-title">'+title+'</div><div class="t-msg">'+msg+'</div></div>';
+  if (typeof onClick === 'function') {
+    d.style.cursor = 'pointer';
+    d.addEventListener('click', function(){ onClick(); });
+  }
   c.insertBefore(d,c.firstChild);
   setTimeout(function(){ d.style.opacity='0'; d.style.transition='opacity .35s'; setTimeout(function(){ d.parentNode&&d.parentNode.removeChild(d); },380); },ms);
 }
@@ -1374,7 +1378,17 @@ function toggleEdit(){
     if (m.img) preview = (m.m && m.m !== '📷 사진') ? (m.m + ' 📷') : '사진을 보냈어요 📷';
     else preview = m.m || '';
     if (preview.length > 42) preview = preview.slice(0,42) + '…';
-    if (typeof toast === 'function') toast('💬', escapeHTML(m.n), escapeHTML(preview), 'info', 5000);
+    if (typeof toast === 'function') toast('💬', escapeHTML(m.n), escapeHTML(preview), 'info', 5000, scrollToChat);
+  }
+
+  // 알림 탭 시 채팅창까지 스크롤 (고정 헤더에 가리지 않도록 헤더 높이만큼 보정)
+  function scrollToChat(){
+    var chatBox = document.querySelector('.chat-box');
+    if (!chatBox) return;
+    var header = document.querySelector('header');
+    var headerH = header ? header.getBoundingClientRect().height : 0;
+    var targetY = window.pageYOffset + chatBox.getBoundingClientRect().top - headerH - 12;
+    window.scrollTo({ top: Math.max(0, targetY), behavior:'smooth' });
   }
 
   // 최초 1회만 최근 50개를 통째로 받고, 그 이후엔 마지막으로 받은 키 이후의
