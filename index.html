@@ -1166,21 +1166,40 @@ function toggleEdit(){
     var b=document.getElementById('v-total'); if(b) b.textContent=fmt(tot);
   }
 
-  fetch(FB+'/visitors/total.json')
-  .then(function(r){return r.json();})
-  .then(function(total){
-    var nt=(total||0)+1;
-    return fetch(FB+'/visitors/total.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(nt)})
-    .then(function(){return nt;});
-  })
-  .then(function(total){
+  // 이 기기가 전체 누적에 이미 카운트된 적 있는지 (평생 한 번만 증가)
+  var everCounted = localStorage.getItem('rst_ever_counted') === '1';
+  // 이 기기가 오늘 이미 카운트된 적 있는지 (날짜가 바뀌면 자동으로 다시 카운트)
+  var alreadyToday = localStorage.getItem('rst_last_counted_date') === todayStr;
+
+  function bumpTotal(){
+    if (everCounted) {
+      return fetch(FB+'/visitors/total.json').then(function(r){return r.json();}).then(function(t){ return t||0; });
+    }
+    return fetch(FB+'/visitors/total.json')
+      .then(function(r){return r.json();})
+      .then(function(total){
+        var nt=(total||0)+1;
+        return fetch(FB+'/visitors/total.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(nt)})
+          .then(function(){ localStorage.setItem('rst_ever_counted','1'); return nt; });
+      });
+  }
+
+  function bumpDaily(){
+    if (alreadyToday) {
+      return fetch(FB+'/visitors/daily/'+today+'.json').then(function(r){return r.json();}).then(function(d){ return d||0; });
+    }
     return fetch(FB+'/visitors/daily/'+today+'.json')
-    .then(function(r){return r.json();})
-    .then(function(dc){
-      var nd=(dc||0)+1;
-      return fetch(FB+'/visitors/daily/'+today+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(nd)})
-      .then(function(){return{today:nd,total:total};});
-    });
+      .then(function(r){return r.json();})
+      .then(function(dc){
+        var nd=(dc||0)+1;
+        return fetch(FB+'/visitors/daily/'+today+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(nd)})
+          .then(function(){ localStorage.setItem('rst_last_counted_date', todayStr); return nd; });
+      });
+  }
+
+  bumpTotal()
+  .then(function(total){
+    return bumpDaily().then(function(daily){ return {today:daily, total:total}; });
   })
   .then(function(data){
     show(data.today,data.total);
