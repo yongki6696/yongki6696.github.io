@@ -1374,6 +1374,7 @@ function toggleEdit(){
       if(!obj){ if(!lastKey) renderMsgs(); isFirstLoad = false; return; }
       var keys = Object.keys(obj);
       if(!keys.length){ isFirstLoad = false; return; }
+      var wasFirstLoad = isFirstLoad;
       var added = false;
       var freshMsgs = [];
       keys.forEach(function(k){
@@ -1389,7 +1390,14 @@ function toggleEdit(){
         allKeys.slice(0, allKeys.length-50).forEach(function(k){ delete msgCache[k]; });
       }
       if(added || !lastKey) renderMsgs();
-      freshMsgs.forEach(notifyNewMsg);
+      if (wasFirstLoad) {
+        // 앱을 처음 열었을 때는 과거 메시지 전부가 아니라 가장 최근 1개만 알림으로 보여줌
+        var sortedIncoming = keys.sort();
+        var latestKey = sortedIncoming[sortedIncoming.length-1];
+        if (latestKey) notifyNewMsg(obj[latestKey]);
+      } else {
+        freshMsgs.forEach(notifyNewMsg);
+      }
       isFirstLoad = false;
     }).catch(function(){});
   }
