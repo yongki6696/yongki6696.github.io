@@ -69,6 +69,19 @@ main { max-width:680px; margin:0 auto; padding:calc(env(safe-area-inset-top) + 8
 
 .stats { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:16px; }
 .stat { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px 16px; }
+.stat-filter { cursor:pointer; touch-action:manipulation; -webkit-tap-highlight-color:transparent; transition:background .15s, border-color .15s; }
+.stat-filter:active { background:#1d1d1d; }
+.stat-filter.active { background:rgba(37,99,235,.10); border-color:var(--accent2); }
+.filter-check {
+  display:inline-block; width:12px; height:12px; border-radius:4px;
+  border:1.5px solid var(--border); margin-right:5px; position:relative;
+  box-sizing:border-box; vertical-align:-1px;
+}
+.stat-filter.active .filter-check { background:var(--accent2); border-color:var(--accent2); }
+.stat-filter.active .filter-check::after {
+  content:''; position:absolute; left:2.5px; top:-0.5px; width:4px; height:7px;
+  border:solid #fff; border-width:0 1.5px 1.5px 0; transform:rotate(45deg);
+}
 .stat-label { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.8px; margin-bottom:5px; }
 .stat-big { font-size:28px; font-weight:700; }
 .stat-sm  { font-size:13px; font-weight:600; padding-top:3px; }
@@ -423,8 +436,8 @@ body.edit-mode .edit-hint { display:block; }
   </div>
 
   <div class="stats">
-    <div class="stat"><div class="stat-label">감시 종목</div><div class="stat-big c-white" id="s-total">0</div></div>
-    <div class="stat"><div class="stat-label">RSI 경보</div><div class="stat-big c-danger" id="s-alert">0</div></div>
+    <div class="stat stat-filter active" id="filter-all" data-filter="all"><div class="stat-label"><span class="filter-check"></span>감시 종목</div><div class="stat-big c-white" id="s-total">0</div></div>
+    <div class="stat stat-filter" id="filter-alert" data-filter="alert"><div class="stat-label"><span class="filter-check"></span>RSI 경보</div><div class="stat-big c-danger" id="s-alert">0</div></div>
     <div class="stat" style="grid-column:span 2"><div class="stat-label">마지막 업데이트</div><div class="stat-sm c-muted" id="s-lastup" style="padding-top:4px">—</div></div>
   </div>
 
@@ -482,6 +495,11 @@ body.edit-mode .edit-hint { display:block; }
       <div class="empty-icon">📈</div>
       <div class="empty-title">감시할 종목을 추가하세요</div>
       <div class="empty-desc">티커 심볼 입력 후 + 추가 버튼을 눌러주세요<br>RSI가 임계값 이하로 내려가면 즉시 알림이 옵니다</div>
+    </div>
+    <div class="empty hidden" id="empty-filtered">
+      <div class="empty-icon">🔍</div>
+      <div class="empty-title">조건에 맞는 종목이 없어요</div>
+      <div class="empty-desc">지금은 RSI 경보가 뜬 종목이 없습니다</div>
     </div>
   </div>
 
@@ -859,7 +877,7 @@ function loadStock(s){
     renderLastUpdate(s.lastUp);
   })
   .catch(function(e){ s.loading=false; s.error=e.message; })
-  .then(function(){ renderCard(s); checkAlert(s); updateStats(); });
+  .then(function(){ renderCard(s); applyCardFilter(s); checkAlert(s); updateStats(); updateEmptyState(); });
 }
 function refreshAll(){
   if(!stocks.length){toast('ℹ️','종목 없음','먼저 종목을 추가해주세요','info');return;}
@@ -1050,9 +1068,48 @@ function renderCard(s){
 }
 
 // ── 전체 렌더 ──
+// ── 감시 종목 / RSI 경보 필터 ──
+var cardFilter = 'all'; // 'all' 또는 'alert'
+
+function stockMatchesFilter(s){
+  if (cardFilter === 'alert') return s.rsi != null && s.rsi <= threshold;
+  return true;
+}
+
+function applyCardFilter(s){
+  var el = document.getElementById('card-'+s.ticker+'-'+s.period);
+  if (el) el.style.display = stockMatchesFilter(s) ? '' : 'none';
+}
+
+function updateEmptyState(){
+  var emptyEl = document.getElementById('empty');
+  var emptyFilteredEl = document.getElementById('empty-filtered');
+  if (!emptyEl || !emptyFilteredEl) return;
+  var visibleCount = stocks.filter(stockMatchesFilter).length;
+  if (stocks.length === 0) {
+    emptyEl.style.display = 'block';
+    emptyFilteredEl.classList.add('hidden');
+  } else if (visibleCount === 0) {
+    emptyEl.style.display = 'none';
+    emptyFilteredEl.classList.remove('hidden');
+  } else {
+    emptyEl.style.display = 'none';
+    emptyFilteredEl.classList.add('hidden');
+  }
+}
+
+function setCardFilter(f){
+  cardFilter = f;
+  var allBox = document.getElementById('filter-all');
+  var alertBox = document.getElementById('filter-alert');
+  if (allBox) allBox.classList.toggle('active', f === 'all');
+  if (alertBox) alertBox.classList.toggle('active', f === 'alert');
+  stocks.forEach(applyCardFilter);
+  updateEmptyState();
+}
+
 function renderAll(){
   var grid=document.getElementById('cards');
-  document.getElementById('empty').style.display=stocks.length?'none':'block';
   // 기존 카드 제거
   grid.querySelectorAll('.card').forEach(function(el){grid.removeChild(el);});
   stocks.forEach(function(s){
@@ -1060,7 +1117,9 @@ function renderAll(){
     el.id='card-'+s.ticker+'-'+s.period;
     grid.appendChild(el);
     renderCard(s);
+    applyCardFilter(s);
   });
+  updateEmptyState();
 }
 
 // ── 통계 ──
@@ -1620,8 +1679,9 @@ function updateThreshold(val){
   threshold=parseInt(val);
   document.getElementById('thr-display').textContent=threshold;
   localStorage.setItem('rsi_thr',threshold);
-  stocks.forEach(function(s){renderCard(s);});
+  stocks.forEach(function(s){renderCard(s); applyCardFilter(s);});
   updateStats();
+  updateEmptyState();
 }
 
 // ── 알림 권한 ──
@@ -3251,6 +3311,10 @@ function krsearchClose(){
   checkBanners();
   loadStocksFromStorage();
   renderAll(); updateStats(); renderLastUpdate(null);
+  var filterAllBox = document.getElementById('filter-all');
+  var filterAlertBox = document.getElementById('filter-alert');
+  if (filterAllBox) filterAllBox.addEventListener('click', function(){ setCardFilter('all'); });
+  if (filterAlertBox) filterAlertBox.addEventListener('click', function(){ setCardFilter('alert'); });
   var i=0;
   function nextLoad(){if(i>=stocks.length)return;loadStock(stocks[i++]).then(function(){setTimeout(nextLoad,800);});}
   nextLoad();
