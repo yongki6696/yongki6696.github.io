@@ -875,8 +875,10 @@ function loadStock(s){
     s.name=(meta.longName||meta.shortName)||'';
     // 고점대비(MDD)는 차트 표시 범위(최근 180개)가 아니라 최근 5년치 전체 데이터 기준 최고가로 계산
     s.allTimeHigh = valid.length ? Math.max.apply(null, valid) : null;
-    s.chartData=valid.slice(-180);
-    s.timestamps=validIdx.slice(-180).map(function(idx){ return timestamps[idx]!=null?timestamps[idx]:timestamps[timestamps.length-1]; });
+    // 화면 표시는 180일이지만, MA120(120일 이동평균)이 표시 구간 처음부터 끝까지 다 그려지려면
+    // 그 이전 120일치 데이터가 추가로 더 필요해서 180+120=300일치를 보관해둠
+    s.chartData=valid.slice(-300);
+    s.timestamps=validIdx.slice(-300).map(function(idx){ return timestamps[idx]!=null?timestamps[idx]:timestamps[timestamps.length-1]; });
     s.loading=false; s.error=null; s.lastUp=new Date();
     renderLastUpdate(s.lastUp);
   })
