@@ -881,16 +881,30 @@ function loadStock(s){
   .catch(function(e){ s.loading=false; s.error=e.message; })
   .then(function(){ renderCard(s); applyCardFilter(s); checkAlert(s); updateStats(); updateEmptyState(); });
 }
+// 목록을 동시에 최대 N개씩 병렬로 로딩 (완전 동시도 아니고 완전 순차도 아닌 절충안)
+function loadStocksConcurrent(list, concurrency, onDone){
+  if (!list.length) { if (onDone) onDone(); return; }
+  var idx = 0, remaining = list.length;
+  function launchNext(){
+    if (idx >= list.length) return;
+    var item = list[idx++];
+    loadStock(item).then(function(){
+      remaining--;
+      if (remaining <= 0) { if (onDone) onDone(); }
+      else launchNext();
+    });
+  }
+  var starters = Math.min(concurrency, list.length);
+  for (var k = 0; k < starters; k++) launchNext();
+}
+
 function refreshAll(){
   if(!stocks.length){toast('ℹ️','종목 없음','먼저 종목을 추가해주세요','info');return;}
   var btn=document.getElementById('btn-refresh');
   btn.disabled=true; btn.textContent='⏳ 로딩중';
-  var idx=0;
-  function next(){
-    if(idx>=stocks.length){btn.disabled=false;btn.textContent='⟳ 새로고침';return;}
-    loadStock(stocks[idx++]).then(function(){setTimeout(next,800);});
-  }
-  next();
+  loadStocksConcurrent(stocks, 3, function(){
+    btn.disabled=false; btn.textContent='⟳ 새로고침';
+  });
 }
 
 // ── 알림 ──
@@ -3298,9 +3312,7 @@ function krsearchClose(){
   var filterAlertBox = document.getElementById('filter-alert');
   if (filterAllBox) filterAllBox.addEventListener('click', function(){ setCardFilter('all'); });
   if (filterAlertBox) filterAlertBox.addEventListener('click', function(){ setCardFilter('alert'); });
-  var i=0;
-  function nextLoad(){if(i>=stocks.length)return;loadStock(stocks[i++]).then(function(){setTimeout(nextLoad,800);});}
-  nextLoad();
+  loadStocksConcurrent(stocks, 3);
   setupAutoRefresh();
 })();
 
