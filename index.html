@@ -636,7 +636,7 @@ window.addEventListener('resize', positionToasts);
 window.addEventListener('orientationchange', function(){ setTimeout(positionToasts, 200); });
 
 // ══ Yahoo Finance ══
-var RANGE={'1d':'2y','1wk':'5y','1mo':'10y'};
+var RANGE={'1d':'5y','1wk':'5y','1mo':'5y'};
 function fetchYahoo(ticker,period){
   var ts=Date.now();
   var url='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(ticker)+'?interval='+period+'&range='+RANGE[period]+'&t='+ts;
@@ -873,6 +873,8 @@ function loadStock(s){
     s.prevClose=valid[valid.length-2];
     s.rsi=calcRSI(valid);
     s.name=(meta.longName||meta.shortName)||'';
+    // 고점대비(MDD)는 차트 표시 범위(최근 180개)가 아니라 최근 5년치 전체 데이터 기준 최고가로 계산
+    s.allTimeHigh = valid.length ? Math.max.apply(null, valid) : null;
     s.chartData=valid.slice(-180);
     s.timestamps=validIdx.slice(-180).map(function(idx){ return timestamps[idx]!=null?timestamps[idx]:timestamps[timestamps.length-1]; });
     s.loading=false; s.error=null; s.lastUp=new Date();
@@ -927,14 +929,11 @@ function checkAlert(s){
 }
 
 // ══════════════════════════════════════════
-// 고점 대비 하락률 (MDD, 신규 기능 — 기존 코드 미변경)
+// 고점 대비 하락률 (MDD) — 최근 5년 최고가 기준
 // ══════════════════════════════════════════
-function mddCalc(chartData, currentPrice){
-  if(!chartData || chartData.length<2) return null;
-  var high = Math.max.apply(null, chartData);
-  var price = currentPrice!=null ? currentPrice : chartData[chartData.length-1];
-  if(!high || high<=0) return null;
-  var drop = ((price - high) / high) * 100;
+function mddCalc(high, currentPrice){
+  if(high==null || currentPrice==null || high<=0) return null;
+  var drop = ((currentPrice - high) / high) * 100;
   return Math.round(drop*100)/100; // 음수: 고점 대비 하락
 }
 
@@ -947,8 +946,8 @@ function mddColor(drop){
 }
 
 function mddHTML(s){
-  if(!s.chartData) return '';
-  var drop = mddCalc(s.chartData, s.price);
+  if(s.allTimeHigh==null || s.price==null) return '';
+  var drop = mddCalc(s.allTimeHigh, s.price);
   if(drop==null) return '';
   var label = drop>=0 ? '신고가' : drop+'%';
   return '<div class="mdd-badge"><span class="mdd-label">고점대비</span>'
