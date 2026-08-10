@@ -651,7 +651,7 @@ function fetchYahoo(ticker,period){
 }
 function tryNext(orig,proxies,i){
   if(i>=proxies.length) return Promise.reject(new Error('데이터 로드 실패'));
-  return fetch(proxies[i],{signal:AbortSignal.timeout?AbortSignal.timeout(9000):undefined,cache:'no-store'})
+  return fetch(proxies[i],{signal:AbortSignal.timeout?AbortSignal.timeout(6000):undefined,cache:'no-store'})
   .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
   .then(function(txt){
     var obj; try{obj=JSON.parse(txt);}catch(e){throw new Error('파싱 실패');}
@@ -827,9 +827,8 @@ function getDivHTMLFromResult(div){
     +'</div>';
 }
 
-function loadStock(s, isRetry){
-  s.loading=true; s.error=null;
-  if (!isRetry) renderCard(s);
+function loadStock(s){
+  s.loading=true; s.error=null; renderCard(s);
   return fetchYahoo(s.ticker,s.period)
   .then(function(data){
     var chart=data.chart.result[0];
@@ -879,14 +878,7 @@ function loadStock(s, isRetry){
     s.loading=false; s.error=null; s.lastUp=new Date();
     renderLastUpdate(s.lastUp);
   })
-  .catch(function(e){
-    if (!isRetry) {
-      // 무료 프록시 서버의 일시적 오류일 수 있으므로 2초 뒤 한 번만 자동 재시도
-      return new Promise(function(resolve){ setTimeout(resolve, 2000); })
-        .then(function(){ return loadStock(s, true); });
-    }
-    s.loading=false; s.error=e.message;
-  })
+  .catch(function(e){ s.loading=false; s.error=e.message; })
   .then(function(){ renderCard(s); applyCardFilter(s); checkAlert(s); updateStats(); updateEmptyState(); });
 }
 function refreshAll(){
@@ -896,7 +888,7 @@ function refreshAll(){
   var idx=0;
   function next(){
     if(idx>=stocks.length){btn.disabled=false;btn.textContent='⟳ 새로고침';return;}
-    loadStock(stocks[idx++]).then(function(){setTimeout(next,1300);});
+    loadStock(stocks[idx++]).then(function(){setTimeout(next,800);});
   }
   next();
 }
@@ -3307,7 +3299,7 @@ function krsearchClose(){
   if (filterAllBox) filterAllBox.addEventListener('click', function(){ setCardFilter('all'); });
   if (filterAlertBox) filterAlertBox.addEventListener('click', function(){ setCardFilter('alert'); });
   var i=0;
-  function nextLoad(){if(i>=stocks.length)return;loadStock(stocks[i++]).then(function(){setTimeout(nextLoad,1300);});}
+  function nextLoad(){if(i>=stocks.length)return;loadStock(stocks[i++]).then(function(){setTimeout(nextLoad,800);});}
   nextLoad();
   setupAutoRefresh();
 })();
