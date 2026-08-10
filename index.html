@@ -423,7 +423,7 @@ body.edit-mode .edit-hint { display:block; }
     </p>
   </div>
   <a href="mailto:yongki6696@gmail.com" style="display:block;margin-bottom:16px;">
-    <img id="ad-banner-top" src="ad-banner-728x90.png" alt="광고 협업 문의" style="width:100%;height:auto;border-radius:12px;display:block;">
+    <img id="promo-img-top" src="promo-top.png" alt="광고 협업 문의" style="width:100%;height:auto;border-radius:12px;display:block;">
   </a>
 
   <div class="banner banner-blue hidden" id="pwa-banner">
@@ -543,7 +543,7 @@ body.edit-mode .edit-hint { display:block; }
   </div>
 
   <a href="mailto:yongki6696@gmail.com" style="display:block;margin-top:16px;">
-    <img id="ad-banner-bottom" src="ad-banner-300x250.png" alt="광고 협업 문의" style="width:100%;max-width:300px;height:auto;border-radius:14px;display:block;margin:0 auto;">
+    <img id="promo-img-bottom" src="promo-bottom.png" alt="광고 협업 문의" style="width:100%;max-width:300px;height:auto;border-radius:14px;display:block;margin:0 auto;">
   </a>
 
   <div class="disclaimer">
@@ -3297,10 +3297,10 @@ function krsearchClose(){
 // ══════════════════════════════════════════
 (function adBannerCacheBust(){
   var v = Date.now();
-  var topAd = document.getElementById('ad-banner-top');
-  var bottomAd = document.getElementById('ad-banner-bottom');
-  if (topAd) topAd.src = 'ad-banner-728x90.png?v=' + v;
-  if (bottomAd) bottomAd.src = 'ad-banner-300x250.png?v=' + v;
+  var topAd = document.getElementById('promo-img-top');
+  var bottomAd = document.getElementById('promo-img-bottom');
+  if (topAd) topAd.src = 'promo-top.png?v=' + v;
+  if (bottomAd) bottomAd.src = 'promo-bottom.png?v=' + v;
 })();
 
 (function init(){
