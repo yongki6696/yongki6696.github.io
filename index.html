@@ -1011,12 +1011,12 @@ function makeDivMarkers(data, div, displayLen){
     +'</svg>';
 }
 
-// 다이버전스 지점을 포함하기 위해 필요한 최소 표시 일수 계산 (최소 60일 보장)
+// 다이버전스 지점을 포함하기 위해 필요한 최소 표시 일수 계산 (최소 180일 보장)
 function divRequiredDisplayLen(data, div){
   if(!data||!div||div.idx1==null||div.idx2==null) return Math.min(180, data?data.length:180);
   var earliestIdx = Math.min(div.idx1, div.idx2);
   var neededLen = data.length - earliestIdx + 4; // 살짝 여유(4일)를 둬서 마커가 차트 끝에 딱 붙지 않게
-  return Math.min(data.length, Math.max(60, neededLen));
+  return Math.min(data.length, Math.max(180, neededLen));
 }
 
 // ── 카드 렌더 ──
