@@ -14,14 +14,14 @@
 <meta property="og:site_name" content="RSIngTime">
 <meta property="og:title" content="RSIngTime - RSI 실시간 워치리스트">
 <meta property="og:description" content="한국주식·미국주식·코인 RSI를 실시간으로 감시하고 과매수·과매도 신호를 받아보세요.">
-<meta property="og:image" content="https://yongki6696.github.io/og-image.png">
+<meta property="og:image" content="https://rsingtime.com/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:url" content="https://yongki6696.github.io/">
+<meta property="og:url" content="https://rsingtime.com/">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="RSIngTime - RSI 실시간 워치리스트">
 <meta name="twitter:description" content="한국주식·미국주식·코인 RSI를 실시간으로 감시하고 과매수·과매도 신호를 받아보세요.">
-<meta name="twitter:image" content="https://yongki6696.github.io/og-image.png">
+<meta name="twitter:image" content="https://rsingtime.com/og-image.png">
 <!-- Google Analytics -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-M3W0J31YEP"></script>
 <script>
@@ -549,7 +549,7 @@ body.edit-mode .edit-hint { display:block; }
   <div class="disclaimer">
     <p>⚠️ 투자 판단에 대한 책임은 본인에게 있으며, 본 서비스는 기술적 지표 분석 결과만을 제공할 뿐 투자를 권유하지 않습니다.</p>
     <p>📊 본 서비스에서 제공하는 RSI 신호 및 다이버전스 정보는 단순 기술적 지표 분석 결과이며, 투자 권유나 추천이 아닙니다. 모든 투자의 책임은 투자자 본인에게 있습니다.</p>
-    <p style="margin-top:10px"><a href="https://yongki6696.github.io/rsi-watch/privacy.html" style="color:var(--accent2);text-decoration:none">개인정보처리방침</a></p>
+    <p style="margin-top:10px"><a href="https://rsingtime.com/rsi-watch/privacy.html" style="color:var(--accent2);text-decoration:none">개인정보처리방침</a></p>
   </div>
 </main>
 
@@ -643,6 +643,7 @@ function fetchYahoo(ticker,period){
   return tryNext(url,[
     'https://corsproxy.io/?url='+encodeURIComponent(url)+'&_cb='+ts,
     'https://api.allorigins.win/raw?url='+encodeURIComponent(url)+'&_cb='+ts,
+    'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(url)+'&_cb='+ts,
     'https://api.allorigins.win/get?url='+encodeURIComponent(url)+'&_cb='+ts,
     'https://thingproxy.freeboard.io/fetch/'+url+'&_cb='+ts,
   ],0);
@@ -825,8 +826,9 @@ function getDivHTMLFromResult(div){
     +'</div>';
 }
 
-function loadStock(s){
-  s.loading=true; s.error=null; renderCard(s);
+function loadStock(s, isRetry){
+  s.loading=true; s.error=null;
+  if (!isRetry) renderCard(s);
   return fetchYahoo(s.ticker,s.period)
   .then(function(data){
     var chart=data.chart.result[0];
@@ -876,7 +878,14 @@ function loadStock(s){
     s.loading=false; s.error=null; s.lastUp=new Date();
     renderLastUpdate(s.lastUp);
   })
-  .catch(function(e){ s.loading=false; s.error=e.message; })
+  .catch(function(e){
+    if (!isRetry) {
+      // 무료 프록시 서버의 일시적 오류일 수 있으므로 2초 뒤 한 번만 자동 재시도
+      return new Promise(function(resolve){ setTimeout(resolve, 2000); })
+        .then(function(){ return loadStock(s, true); });
+    }
+    s.loading=false; s.error=e.message;
+  })
   .then(function(){ renderCard(s); applyCardFilter(s); checkAlert(s); updateStats(); updateEmptyState(); });
 }
 function refreshAll(){
@@ -886,7 +895,7 @@ function refreshAll(){
   var idx=0;
   function next(){
     if(idx>=stocks.length){btn.disabled=false;btn.textContent='⟳ 새로고침';return;}
-    loadStock(stocks[idx++]).then(function(){setTimeout(next,800);});
+    loadStock(stocks[idx++]).then(function(){setTimeout(next,1300);});
   }
   next();
 }
@@ -3297,7 +3306,7 @@ function krsearchClose(){
   if (filterAllBox) filterAllBox.addEventListener('click', function(){ setCardFilter('all'); });
   if (filterAlertBox) filterAlertBox.addEventListener('click', function(){ setCardFilter('alert'); });
   var i=0;
-  function nextLoad(){if(i>=stocks.length)return;loadStock(stocks[i++]).then(function(){setTimeout(nextLoad,800);});}
+  function nextLoad(){if(i>=stocks.length)return;loadStock(stocks[i++]).then(function(){setTimeout(nextLoad,1300);});}
   nextLoad();
   setupAutoRefresh();
 })();
