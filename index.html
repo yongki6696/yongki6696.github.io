@@ -641,11 +641,13 @@ function fetchYahoo(ticker,period){
   var ts=Date.now();
   var url='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(ticker)+'?interval='+period+'&range='+RANGE[period]+'&t='+ts;
   return tryNext(url,[
-    'https://corsproxy.io/?url='+encodeURIComponent(url)+'&_cb='+ts,
     'https://api.allorigins.win/raw?url='+encodeURIComponent(url)+'&_cb='+ts,
     'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(url)+'&_cb='+ts,
     'https://api.allorigins.win/get?url='+encodeURIComponent(url)+'&_cb='+ts,
     'https://thingproxy.freeboard.io/fetch/'+url+'&_cb='+ts,
+    // corsproxy.io는 github.io 등 정해진 무료 origin에서만 무료로 동작하고
+    // 커스텀 도메인(rsingtime.com 등)은 막혀있어서 맨 마지막 순서로 내림 (실패해도 큰 지장 없게)
+    'https://corsproxy.io/?url='+encodeURIComponent(url)+'&_cb='+ts,
   ],0);
 }
 function tryNext(orig,proxies,i){
