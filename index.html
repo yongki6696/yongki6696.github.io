@@ -957,7 +957,7 @@ function mddHTML(s){
 // ── 미니차트 ──
 function makeMiniChart(data,color,displayLen){
   if(!data||data.length<2) return '';
-  displayLen = displayLen || Math.min(60, data.length);
+  displayLen = displayLen || Math.min(180, data.length);
   var display=data.slice(-displayLen),W=320,H=60,PAD=4;
   var minP=Math.min.apply(null,display),maxP=Math.max.apply(null,display),range=maxP-minP||1;
   function tx(i,len){return PAD+(i/(len-1))*(W-PAD*2);}
@@ -988,7 +988,7 @@ function makeMiniChart(data,color,displayLen){
 // data: 전체 chartData(최대180일), div: detectDivergence 반환값(idx1/idx2 포함)
 function makeDivMarkers(data, div, displayLen){
   if(!data||!div||div.idx1==null||div.idx2==null) return '';
-  displayLen = displayLen || Math.min(60, data.length);
+  displayLen = displayLen || Math.min(180, data.length);
   var dataStartIdx=data.length-displayLen;
   var W=320,H=60,PAD=4;
   var display=data.slice(-displayLen);
@@ -1013,7 +1013,7 @@ function makeDivMarkers(data, div, displayLen){
 
 // 다이버전스 지점을 포함하기 위해 필요한 최소 표시 일수 계산 (최소 60일 보장)
 function divRequiredDisplayLen(data, div){
-  if(!data||!div||div.idx1==null||div.idx2==null) return Math.min(60, data?data.length:60);
+  if(!data||!div||div.idx1==null||div.idx2==null) return Math.min(180, data?data.length:180);
   var earliestIdx = Math.min(div.idx1, div.idx2);
   var neededLen = data.length - earliestIdx + 4; // 살짝 여유(4일)를 둬서 마커가 차트 끝에 딱 붙지 않게
   return Math.min(data.length, Math.max(60, neededLen));
@@ -1051,8 +1051,8 @@ function renderCard(s){
   }
   // 다이버전스는 한 번만 계산해서 배지와 차트 마커 둘 다에 재사용 (중복 계산 방지)
   var divResult = (s.chartData && s.chartData.length>=30) ? detectDivergence(s.chartData, s.timestamps) : null;
-  // 다이버전스 지점이 기본 60일 범위 밖이면 차트 표시 범위를 자동으로 넓혀서 마커가 항상 보이게 함
-  var chartDisplayLen = divResult ? divRequiredDisplayLen(s.chartData, divResult) : Math.min(60, s.chartData?s.chartData.length:60);
+  // 다이버전스 지점이 기본 180일(6개월) 범위 밖이면 차트 표시 범위를 자동으로 넓혀서 마커가 항상 보이게 함
+  var chartDisplayLen = divResult ? divRequiredDisplayLen(s.chartData, divResult) : Math.min(180, s.chartData?s.chartData.length:180);
   var divMarkerHTML = divResult ? makeDivMarkers(s.chartData, divResult, chartDisplayLen) : '';
   var chartHTML = s.chartData
     ? (legendHTML + '<div style="position:relative">' + makeMiniChart(s.chartData,chartColor,chartDisplayLen) + divMarkerHTML + '</div>')
