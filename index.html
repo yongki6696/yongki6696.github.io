@@ -102,6 +102,37 @@ main { max-width:680px; margin:0 auto; padding:calc(env(safe-area-inset-top) + 8
 .thr-val { font-size:24px; font-weight:700; color:var(--danger); }
 input[type=range] { width:100%; accent-color:var(--danger); cursor:pointer; }
 
+.ticker-wrap {
+  display:flex; align-items:center; gap:0; background:#0d0603;
+  border:1px solid #3a1f0a; border-radius:12px; margin-bottom:16px;
+  overflow:hidden; height:38px;
+}
+.ticker-tag {
+  flex-shrink:0; background:linear-gradient(180deg,#ea580c,#c2410c); color:#fff;
+  font-size:11px; font-weight:800; padding:0 12px; height:100%;
+  display:flex; align-items:center; letter-spacing:.3px; z-index:2;
+  box-shadow:2px 0 8px rgba(0,0,0,.35);
+}
+.ticker-view { flex:1; min-width:0; overflow:hidden; height:100%; position:relative; }
+.ticker-track {
+  display:flex; align-items:center; height:100%; width:max-content;
+  animation:ticker-scroll 40s linear infinite;
+  will-change:transform;
+}
+.ticker-wrap.ticker-paused .ticker-track { animation-play-state:paused; }
+@keyframes ticker-scroll {
+  from { transform:translateX(0); }
+  to   { transform:translateX(-50%); }
+}
+.ticker-item {
+  flex-shrink:0; display:flex; align-items:center; gap:6px;
+  padding:0 18px; font-size:12px; white-space:nowrap;
+  border-right:1px solid rgba(255,255,255,.08);
+}
+.ticker-item .ti-name { color:#fde68a; font-weight:700; }
+.ticker-item .ti-rsi { color:#fb923c; font-weight:800; }
+.ticker-empty { padding:0 16px; font-size:11px; color:var(--muted); white-space:nowrap; }
+
 .sec-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; padding:0 2px; }
 .sec-title { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.9px; }
 .sec-sub   { font-size:10px; color:var(--muted); }
@@ -481,6 +512,13 @@ body.edit-mode .edit-hint { display:block; }
       <span class="thr-val" id="thr-display">30</span>
     </div>
     <input type="range" id="inp-threshold" min="10" max="50" value="30">
+  </div>
+
+  <div class="ticker-wrap hidden" id="ticker-wrap">
+    <div class="ticker-tag">🔥 RSI&lt;40</div>
+    <div class="ticker-view">
+      <div class="ticker-track" id="ticker-track"></div>
+    </div>
   </div>
 
   <div class="sec-header">
@@ -900,6 +938,82 @@ function loadStocksConcurrent(list, concurrency, onDone){
   }
   var starters = Math.min(concurrency, list.length);
   for (var k = 0; k < starters; k++) launchNext();
+}
+
+// ══════════════════════════════════════════
+// RSI<40 전광판 — 감시 목록과는 완전히 별개로,
+// 시총 상위 종목 60개(한국30+미국30)만 백그라운드에서 조용히 스캔함
+// (검색DB 전체 3천여개를 스캔하는 건 무료 프록시로는 사실상 불가능해서 후보군을 제한함)
+// ══════════════════════════════════════════
+var TICKER_POOL = [
+  // 코스피 시가총액 상위 30 (2026.08 기준)
+  {n:'삼성전자',t:'005930.KS'},{n:'SK하이닉스',t:'000660.KS'},{n:'SK스퀘어',t:'402340.KS'},
+  {n:'삼성전기',t:'009150.KS'},{n:'현대차',t:'005380.KS'},{n:'LG에너지솔루션',t:'373220.KS'},
+  {n:'삼성바이오로직스',t:'207940.KS'},{n:'한화에어로스페이스',t:'012450.KS'},{n:'KB금융',t:'105560.KS'},
+  {n:'삼성물산',t:'028260.KS'},{n:'삼성생명',t:'032830.KS'},{n:'기아',t:'000270.KS'},
+  {n:'HD현대중공업',t:'329180.KS'},{n:'두산에너빌리티',t:'034020.KS'},{n:'신한지주',t:'055550.KS'},
+  {n:'셀트리온',t:'068270.KS'},{n:'현대모비스',t:'012330.KS'},{n:'SK',t:'034730.KS'},
+  {n:'삼성SDI',t:'006400.KS'},{n:'하나금융지주',t:'086790.KS'},{n:'NAVER',t:'035420.KS'},
+  {n:'LG전자',t:'066570.KS'},{n:'LS ELECTRIC',t:'010120.KS'},{n:'삼성화재',t:'000810.KS'},
+  {n:'HD현대일렉트릭',t:'267260.KS'},{n:'효성중공업',t:'298040.KS'},{n:'한화오션',t:'042660.KS'},
+  {n:'HD한국조선해양',t:'009540.KS'},{n:'POSCO홀딩스',t:'005490.KS'},{n:'고려아연',t:'010130.KS'},
+  // 미국 시가총액 상위 30 (2026.08 기준)
+  {n:'NVIDIA',t:'NVDA'},{n:'Apple',t:'AAPL'},{n:'Alphabet A',t:'GOOGL'},{n:'Alphabet C',t:'GOOG'},
+  {n:'Microsoft',t:'MSFT'},{n:'Amazon',t:'AMZN'},{n:'Broadcom',t:'AVGO'},{n:'Meta Platforms',t:'META'},
+  {n:'Tesla',t:'TSLA'},{n:'Berkshire Hathaway',t:'BRK.B'},{n:'Eli Lilly',t:'LLY'},{n:'Micron',t:'MU'},
+  {n:'JPMorgan Chase',t:'JPM'},{n:'Walmart',t:'WMT'},{n:'AMD',t:'AMD'},{n:'ExxonMobil',t:'XOM'},
+  {n:'Visa',t:'V'},{n:'Johnson & Johnson',t:'JNJ'},{n:'Mastercard',t:'MA'},{n:'Intel',t:'INTC'},
+  {n:'Cisco',t:'CSCO'},{n:'Bank of America',t:'BAC'},{n:'AbbVie',t:'ABBV'},{n:'Oracle',t:'ORCL'},
+  {n:'Costco',t:'COST'},{n:'Palantir',t:'PLTR'},{n:'Applied Materials',t:'AMAT'},{n:'Chevron',t:'CVX'},
+  {n:'Caterpillar',t:'CAT'},{n:'Lam Research',t:'LRCX'}
+];
+
+var tickerScanResults = {}; // ticker -> {n,t,rsi}
+var tickerScanning = false;
+
+function scanTickerPool(){
+  if (tickerScanning) return; // 중복 스캔 방지
+  tickerScanning = true;
+  var idx = 0, remaining = TICKER_POOL.length;
+  function launchNext(){
+    if (idx >= TICKER_POOL.length) return;
+    var item = TICKER_POOL[idx++];
+    fetchYahoo(item.t, '1d').then(function(data){
+      var chart = data.chart.result[0];
+      var closes = chart.indicators.quote[0].close;
+      var valid = closes.filter(function(v){ return v!=null && !isNaN(v); });
+      var rsi = calcRSI(valid);
+      if (rsi != null) tickerScanResults[item.t] = { n:item.n, t:item.t, rsi:rsi };
+    }).catch(function(){
+      // 실패한 종목은 조용히 건너뜀 (전광판에 에러를 표시하지 않음)
+    }).then(function(){
+      remaining--;
+      if (remaining <= 0) { tickerScanning = false; renderTicker(); }
+      else launchNext();
+    });
+  }
+  var starters = Math.min(3, TICKER_POOL.length);
+  for (var k=0; k<starters; k++) launchNext();
+}
+
+function renderTicker(){
+  var wrap = document.getElementById('ticker-wrap');
+  var track = document.getElementById('ticker-track');
+  if (!wrap || !track) return;
+  var hits = Object.keys(tickerScanResults).map(function(k){ return tickerScanResults[k]; })
+    .filter(function(x){ return x.rsi != null && x.rsi < 40; })
+    .sort(function(a,b){ return a.rsi - b.rsi; });
+  if (!hits.length) {
+    wrap.classList.add('hidden');
+    track.innerHTML = '';
+    return;
+  }
+  var itemsHTML = hits.map(function(x){
+    return '<span class="ticker-item"><span class="ti-name">'+x.n+'</span><span class="ti-rsi">RSI '+x.rsi+'</span></span>';
+  }).join('');
+  // 애니메이션이 끊김 없이 반복되도록 내용을 두 벌 이어붙임 (-50% 이동 시 정확히 한 바퀴)
+  track.innerHTML = itemsHTML + itemsHTML;
+  wrap.classList.remove('hidden');
 }
 
 function refreshAll(){
@@ -3315,6 +3429,9 @@ function krsearchClose(){
   if (filterAlertBox) filterAlertBox.addEventListener('click', function(){ setCardFilter('alert'); });
   loadStocksConcurrent(stocks, 3);
   setupAutoRefresh();
+  // 감시 목록 로딩과 겹치지 않도록 살짝 지연 후 전광판(시총 상위 60종목) 스캔 시작
+  setTimeout(scanTickerPool, 4000);
+  setInterval(scanTickerPool, 10*60*1000); // 10분마다 재스캔
 })();
 
 </script>
