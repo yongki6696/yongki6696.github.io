@@ -347,6 +347,17 @@ body.edit-mode .edit-hint { display:block; }
 .rootguide-table tr:last-child td { border-bottom:none; }
 
 /* ── 커뮤니티 채팅 ── */
+.fg-wrap { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:16px; }
+.fg-card {
+  background:var(--card); border:1px solid var(--border); border-radius:14px;
+  padding:12px 10px; text-align:center;
+}
+.fg-label { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; margin-bottom:4px; }
+.fg-value { font-size:24px; font-weight:800; color:var(--text); line-height:1.2; }
+.fg-bar { height:5px; background:#242424; border-radius:3px; margin:7px 0 6px; overflow:hidden; }
+.fg-bar-fill { height:100%; width:0%; background:var(--muted); transition:width .5s ease, background .5s ease; }
+.fg-status { font-size:11px; font-weight:700; color:var(--text2); }
+
 .chat-box {
   background:var(--card); border:1px solid var(--border);
   border-radius:16px; padding:16px 16px 14px; margin-top:20px;
@@ -550,6 +561,28 @@ body.edit-mode .edit-hint { display:block; }
       <tr><td>71 이상</td><td>분할매도! 🥸 — 과매수 구간, 차익 실현 고려</td></tr>
     </table>
   </div>
+
+  <div class="fg-wrap">
+    <div class="fg-card" id="fg-kr">
+      <div class="fg-label">한국주식</div>
+      <div class="fg-value" id="fg-kr-value">—</div>
+      <div class="fg-bar"><div class="fg-bar-fill" id="fg-kr-fill"></div></div>
+      <div class="fg-status" id="fg-kr-status">불러오는 중</div>
+    </div>
+    <div class="fg-card" id="fg-us">
+      <div class="fg-label">미국주식</div>
+      <div class="fg-value" id="fg-us-value">—</div>
+      <div class="fg-bar"><div class="fg-bar-fill" id="fg-us-fill"></div></div>
+      <div class="fg-status" id="fg-us-status">불러오는 중</div>
+    </div>
+    <div class="fg-card" id="fg-crypto">
+      <div class="fg-label">코인</div>
+      <div class="fg-value" id="fg-crypto-value">—</div>
+      <div class="fg-bar"><div class="fg-bar-fill" id="fg-crypto-fill"></div></div>
+      <div class="fg-status" id="fg-crypto-status">불러오는 중</div>
+    </div>
+  </div>
+
   <div class="chat-box">
     <h2>💬 라이징타임 채팅방</h2>
     <div class="chat-nick-row" id="chat-nick-view">
@@ -970,6 +1003,80 @@ var TICKER_POOL = [
 
 var tickerScanResults = {}; // ticker -> {n,t,rsi}
 var tickerScanning = false;
+
+// ══════════════════════════════════════════
+// 공포탐욕지수 (한국주식 / 미국주식 / 코인 3분할)
+// 코인은 alternative.me의 실제 공식 Fear&Greed API를 그대로 사용.
+// 한국·미국 주식은 공식 무료 API가 없어서, 이미 갖고 있는 RSI + 120일 이동평균 대비 위치를
+// 조합해 0~100 점수로 환산한 자체 근사치임 (CNN 공식 지수와 100% 동일하지 않음).
+// ══════════════════════════════════════════
+function fgColor(score){
+  if(score==null) return '#505050';
+  if(score<=24) return '#ef4444';
+  if(score<=44) return '#f59e0b';
+  if(score<=55) return '#a0a0a0';
+  if(score<=75) return '#22c55e';
+  return '#a78bfa';
+}
+function fgLabel(score){
+  if(score==null) return '데이터 없음';
+  if(score<=24) return '극단적 공포';
+  if(score<=44) return '공포';
+  if(score<=55) return '중립';
+  if(score<=75) return '탐욕';
+  return '극단적 탐욕';
+}
+function renderFG(key, score){
+  var valueEl = document.getElementById('fg-'+key+'-value');
+  var fillEl = document.getElementById('fg-'+key+'-fill');
+  var statusEl = document.getElementById('fg-'+key+'-status');
+  if(!valueEl) return;
+  var color = fgColor(score);
+  valueEl.textContent = score!=null ? score : '—';
+  valueEl.style.color = color;
+  if(fillEl){ fillEl.style.width = (score!=null?score:0)+'%'; fillEl.style.background = color; }
+  if(statusEl) statusEl.textContent = fgLabel(score);
+}
+
+// 주가지수 티커로 RSI(14) + MA120 대비 위치를 조합해 0~100 점수 산출
+function computeStockFG(ticker){
+  return fetchYahoo(ticker, '1d').then(function(data){
+    var chart = data.chart.result[0];
+    var closes = chart.indicators.quote[0].close.filter(function(v){ return v!=null && !isNaN(v); });
+    if(closes.length<20) return null;
+    var rsi = calcRSI(closes);
+    var price = closes[closes.length-1];
+    var maScore = 50;
+    if(closes.length>=120){
+      var sum=0;
+      for(var i=closes.length-120;i<closes.length;i++) sum+=closes[i];
+      var ma120 = sum/120;
+      var gapPct = (price-ma120)/ma120*100; // 이동평균 대비 몇% 위/아래인지
+      maScore = 50 + gapPct*2.5; // ±20% 정도를 0~100 범위로 환산
+    }
+    maScore = Math.max(0, Math.min(100, maScore));
+    var score = rsi!=null ? (rsi*0.6 + maScore*0.4) : maScore;
+    return Math.round(Math.max(0, Math.min(100, score)));
+  });
+}
+
+// 코인 공포탐욕지수는 alternative.me 공식 API 사용 (직접 호출 실패 시 프록시로 재시도)
+function fetchCryptoFG(){
+  var url = 'https://api.alternative.me/fng/?limit=1';
+  return fetch(url).then(function(r){ return r.json(); })
+    .catch(function(){
+      return fetch('https://api.allorigins.win/raw?url='+encodeURIComponent(url)).then(function(r){ return r.json(); });
+    })
+    .then(function(data){
+      return parseInt(data.data[0].value);
+    });
+}
+
+function loadFearGreed(){
+  computeStockFG('^KS11').then(function(s){ renderFG('kr', s); }).catch(function(){ renderFG('kr', null); });
+  computeStockFG('SPY').then(function(s){ renderFG('us', s); }).catch(function(){ renderFG('us', null); });
+  fetchCryptoFG().then(function(s){ renderFG('crypto', s); }).catch(function(){ renderFG('crypto', null); });
+}
 
 function scanTickerPool(){
   if (tickerScanning) return; // 중복 스캔 방지
@@ -3432,6 +3539,9 @@ function krsearchClose(){
   // 감시 목록 로딩과 겹치지 않도록 살짝 지연 후 전광판(시총 상위 60종목) 스캔 시작
   setTimeout(scanTickerPool, 4000);
   setInterval(scanTickerPool, 10*60*1000); // 10분마다 재스캔
+  // 공포탐욕지수도 별도 타이밍에 로드 (요청이 한꺼번에 몰리지 않도록)
+  setTimeout(loadFearGreed, 1500);
+  setInterval(loadFearGreed, 10*60*1000);
 })();
 
 </script>
