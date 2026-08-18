@@ -1628,6 +1628,7 @@ function toggleEdit(){
   var lastKey = null;
   var msgCache = {}; // key -> message, 로컬 누적 캐시 (동일 데이터 반복 다운로드 방지용)
   var isFirstLoad = true; // 최초 로딩(과거 메시지 일괄 불러오기) 때는 알림을 띄우지 않기 위한 플래그
+  var msgsEverRendered = false; // 채팅창이 한 번도 그려진 적 없으면(=스크롤 위치가 의미없으면) 무조건 맨 아래로 내리기 위한 플래그
 
   function renderMsgs(){
     var wrap = document.getElementById('chat-msgs');
@@ -1637,6 +1638,7 @@ function toggleEdit(){
       wrap.innerHTML = '<div class="chat-empty">아직 메시지가 없어요. 첫 메시지를 남겨보세요!</div>';
       return;
     }
+    var forceBottom = !msgsEverRendered; // 채팅창을 처음 그리는 순간엔 이전 스크롤 위치라는 게 없으므로 무조건 최신글로
     var nearBottom = true;
     try{ nearBottom = (wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight) < 60; }catch(e){}
     var html = keys.map(function(k){
@@ -1647,7 +1649,8 @@ function toggleEdit(){
       return '<div class="chat-msg"><span class="nick">'+escapeHTML(m.n)+'</span>'+textHTML+'<span class="time">'+timeLabel(m.t)+'</span>'+imgHTML+'</div>';
     }).join('');
     wrap.innerHTML = html || '<div class="chat-empty">아직 메시지가 없어요. 첫 메시지를 남겨보세요!</div>';
-    if(nearBottom) wrap.scrollTop = wrap.scrollHeight;
+    if(forceBottom || nearBottom) wrap.scrollTop = wrap.scrollHeight;
+    msgsEverRendered = true;
   }
 
   // 새 메시지 도착 시 화면 상단에 알림 배너(기존 toast 시스템 재사용)를 띄움.
