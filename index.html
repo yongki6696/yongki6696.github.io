@@ -1645,11 +1645,22 @@ function toggleEdit(){
       var m = msgCache[k];
       if(!m || !m.n || (!m.m && !m.img)) return '';
       var textHTML = m.m ? '<span class="txt">'+escapeHTML(m.m)+'</span>' : '';
-      var imgHTML = m.img ? '<div class="chat-img-wrap"><img class="chat-img" src="'+m.img+'" loading="lazy"></div>' : '';
+      // loading="lazy"를 쓰지 않음: 이미지가 스크롤을 맨 아래로 내린 "이후"에 뒤늦게 로딩되면
+      // 그만큼 내용 높이가 늘어나 스크롤이 다시 위로 밀려 보이는 문제가 있었음
+      var imgHTML = m.img ? '<div class="chat-img-wrap"><img class="chat-img" src="'+m.img+'"></div>' : '';
       return '<div class="chat-msg"><span class="nick">'+escapeHTML(m.n)+'</span>'+textHTML+'<span class="time">'+timeLabel(m.t)+'</span>'+imgHTML+'</div>';
     }).join('');
     wrap.innerHTML = html || '<div class="chat-empty">아직 메시지가 없어요. 첫 메시지를 남겨보세요!</div>';
-    if(forceBottom || nearBottom) wrap.scrollTop = wrap.scrollHeight;
+    if(forceBottom || nearBottom){
+      wrap.scrollTop = wrap.scrollHeight;
+      // 이 시점에 아직 로딩 중인 이미지가 있다면, 로딩이 끝나 높이가 늘어난 뒤 한 번 더 맨 아래로 재조정
+      var imgs = wrap.querySelectorAll('img.chat-img');
+      for (var i=0; i<imgs.length; i++){
+        if (!imgs[i].complete){
+          imgs[i].addEventListener('load', function(){ wrap.scrollTop = wrap.scrollHeight; });
+        }
+      }
+    }
     msgsEverRendered = true;
   }
 
