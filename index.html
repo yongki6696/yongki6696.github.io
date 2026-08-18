@@ -116,7 +116,7 @@ input[type=range] { width:100%; accent-color:var(--danger); cursor:pointer; }
 .ticker-view { flex:1; min-width:0; overflow:hidden; height:100%; position:relative; }
 .ticker-track {
   display:flex; align-items:center; height:100%; width:max-content;
-  animation:ticker-scroll 40s linear infinite;
+  animation:ticker-scroll 12s linear infinite;
   will-change:transform;
 }
 .ticker-wrap.ticker-paused .ticker-track { animation-play-state:paused; }
@@ -128,7 +128,9 @@ input[type=range] { width:100%; accent-color:var(--danger); cursor:pointer; }
   flex-shrink:0; display:flex; align-items:center; gap:6px;
   padding:0 18px; font-size:12px; white-space:nowrap;
   border-right:1px solid rgba(255,255,255,.08);
+  cursor:pointer; touch-action:manipulation; -webkit-tap-highlight-color:transparent;
 }
+.ticker-item:active { background:rgba(255,255,255,.08); }
 .ticker-item .ti-name { color:#fde68a; font-weight:700; }
 .ticker-item .ti-rsi { color:#fb923c; font-weight:800; }
 .ticker-empty { padding:0 16px; font-size:11px; color:var(--muted); white-space:nowrap; }
@@ -1106,6 +1108,21 @@ function scanTickerPool(){
   for (var k=0; k<starters; k++) launchNext();
 }
 
+// 전광판 항목을 탭하면 감시 목록(관심종목)에 바로 추가
+function addTickerItemToWatchlist(ticker, name){
+  if (!ticker) return;
+  var period = document.getElementById('inp-period').value;
+  if (stocks.find(function(s){ return s.ticker===ticker && s.period===period; })) {
+    toast('ℹ️', '이미 있음', (name||ticker)+'은(는) 이미 감시 목록에 있어요', 'info', 2500);
+    return;
+  }
+  var s = { ticker:ticker, period:period, rsi:null, price:null, prevClose:null, name:name||'', loading:true, error:null, lastUp:null, chartData:null, allTimeHigh:null };
+  stocks.push(s);
+  save(); renderAll(); updateStats();
+  loadStock(s);
+  toast('✅', (name||ticker)+' 추가됨', '감시 목록에 담았어요 · 데이터 로딩 중…', 'ok', 2500);
+}
+
 function renderTicker(){
   var wrap = document.getElementById('ticker-wrap');
   var track = document.getElementById('ticker-track');
@@ -1119,11 +1136,18 @@ function renderTicker(){
     return;
   }
   var itemsHTML = hits.map(function(x){
-    return '<span class="ticker-item"><span class="ti-name">'+x.n+'</span><span class="ti-rsi">RSI '+x.rsi+'</span></span>';
+    var nameAttr = String(x.n).replace(/"/g,'&quot;');
+    return '<span class="ticker-item" data-t="'+x.t+'" data-n="'+nameAttr+'"><span class="ti-name">'+x.n+'</span><span class="ti-rsi">RSI '+x.rsi+'</span></span>';
   }).join('');
   // 애니메이션이 끊김 없이 반복되도록 내용을 두 벌 이어붙임 (-50% 이동 시 정확히 한 바퀴)
   track.innerHTML = itemsHTML + itemsHTML;
   wrap.classList.remove('hidden');
+  // 종목 개수와 무관하게 항상 같은 체감 속도로 흐르도록, 고정된 초(duration)가 아니라
+  // 실제 콘텐츠 너비 기준 초당 이동 픽셀(px/s)로 애니메이션 시간을 계산함
+  var PX_PER_SEC = 90;
+  var oneSetWidth = track.scrollWidth / 2; // 두 벌 중 한 벌의 실제 너비
+  var duration = Math.max(6, oneSetWidth / PX_PER_SEC);
+  track.style.animationDuration = duration.toFixed(1) + 's';
 }
 
 function refreshAll(){
@@ -3559,6 +3583,25 @@ function krsearchClose(){
   // 공포탐욕지수도 별도 타이밍에 로드 (요청이 한꺼번에 몰리지 않도록)
   setTimeout(loadFearGreed, 1500);
   setInterval(loadFearGreed, 10*60*1000);
+  // 전광판 항목 탭 -> 감시 목록에 바로 추가 (위임 방식: track 자체는 재렌더링되어도 그대로라 한 번만 바인딩하면 됨)
+  var tickerTrackEl = document.getElementById('ticker-track');
+  if (tickerTrackEl) {
+    var tickerScrolling = false;
+    tickerTrackEl.addEventListener('touchstart', function(){ tickerScrolling = false; }, {passive:true});
+    tickerTrackEl.addEventListener('touchmove', function(){ tickerScrolling = true; }, {passive:true});
+    tickerTrackEl.addEventListener('touchend', function(e){
+      if (tickerScrolling) { tickerScrolling = false; return; }
+      var item = e.target.closest('.ticker-item');
+      if (!item) return;
+      e.preventDefault();
+      addTickerItemToWatchlist(item.getAttribute('data-t'), item.getAttribute('data-n'));
+    }, {passive:false});
+    tickerTrackEl.addEventListener('click', function(e){
+      var item = e.target.closest('.ticker-item');
+      if (!item) return;
+      addTickerItemToWatchlist(item.getAttribute('data-t'), item.getAttribute('data-n'));
+    });
+  }
 })();
 
 </script>
