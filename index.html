@@ -1466,7 +1466,7 @@ function updateStats(){
 
 // ── 추가/삭제 ──
 function addStock(){
-  var raw=document.getElementById('inp-ticker').value.trim().toUpperCase().replace(/[^A-Z0-9.\-\^]/g,'');
+  var raw=document.getElementById('inp-ticker').value.trim().toUpperCase().replace(/[^A-Z0-9.\-\^=]/g,'');
   var period=document.getElementById('inp-period').value;
   if(!raw){toast('⚠️','티커 없음','예: AAPL TSLA QLD NVDL','info');return;}
   if(stocks.find(function(s){return s.ticker===raw&&s.period===period;})){
@@ -2295,6 +2295,7 @@ var KRSEARCH_DB = [
   {n:'대양전기공업',t:'108380.KQ'},{n:'대양제지',t:'006580.KQ'},
   {n:'대영포장',t:'014160.KS'},{n:'대우건설',t:'047040.KS'},
   {n:'대우부품',t:'009320.KS'},{n:'대웅',t:'003090.KS'},
+  {n:'달러원 환율',t:'KRW=X'},
   {n:'대웅제약',t:'069620.KS'},{n:'대원',t:'007680.KQ'},
   {n:'대원강업',t:'000430.KS'},{n:'대원미디어',t:'048910.KQ'},
   {n:'대원산업',t:'005710.KQ'},{n:'대원전선',t:'006340.KS'},
@@ -3361,8 +3362,8 @@ function krsearchIsKRTicker(ticker){
   return /\.(KS|KQ)$/i.test(ticker || '');
 }
 function krsearchFormatPrice(ticker, price){
-  if (krsearchIsKRTicker(ticker)) {
-    // 원화: 소수점 없이, 천단위 콤마
+  if (krsearchIsKRTicker(ticker) || /=X$/i.test(ticker || '')) {
+    // 원화 또는 환율(1달러=몇원): 소수점 없이, 천단위 콤마
     return '₩' + Math.round(price).toLocaleString('ko-KR');
   }
   // 기존과 동일: 달러, 소수점 2자리
@@ -3457,10 +3458,12 @@ function krsearchItemsHTML(list){
     var isKS = s.t.indexOf('.KS') !== -1;
     var isKQ = s.t.indexOf('.KQ') !== -1;
     var isCrypto = s.t.indexOf('-USD') !== -1;
+    var isFx = s.t.indexOf('=X') !== -1;
     var exch, color;
     if (isKS) { exch='코스피'; color='#3b82f6'; }
     else if (isKQ) { exch='코스닥'; color='#22c55e'; }
     else if (isCrypto) { exch='코인'; color='#a78bfa'; }
+    else if (isFx) { exch='환율'; color='#2dd4bf'; }
     else { exch='미국'; color='#f59e0b'; }
     var sel = !!krsearchSelected[s.t];
     var nameAttr = String(s.n).replace(/"/g,'&quot;');
