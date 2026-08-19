@@ -1016,26 +1016,26 @@ function loadStocksConcurrent(list, concurrency, onDone){
 // (검색DB 전체 3천여개를 스캔하는 건 무료 프록시로는 사실상 불가능해서 후보군을 제한함)
 // ══════════════════════════════════════════
 var TICKER_POOL = [
-  // 코스피 시가총액 상위 30 (2026.08 기준)
+  // 코스피 시가총액 상위 30 (2026.08.18 기준)
   {n:'삼성전자',t:'005930.KS'},{n:'SK하이닉스',t:'000660.KS'},{n:'SK스퀘어',t:'402340.KS'},
   {n:'삼성전기',t:'009150.KS'},{n:'현대차',t:'005380.KS'},{n:'LG에너지솔루션',t:'373220.KS'},
-  {n:'삼성바이오로직스',t:'207940.KS'},{n:'한화에어로스페이스',t:'012450.KS'},{n:'KB금융',t:'105560.KS'},
-  {n:'삼성물산',t:'028260.KS'},{n:'삼성생명',t:'032830.KS'},{n:'기아',t:'000270.KS'},
-  {n:'HD현대중공업',t:'329180.KS'},{n:'두산에너빌리티',t:'034020.KS'},{n:'신한지주',t:'055550.KS'},
-  {n:'셀트리온',t:'068270.KS'},{n:'현대모비스',t:'012330.KS'},{n:'SK',t:'034730.KS'},
-  {n:'삼성SDI',t:'006400.KS'},{n:'하나금융지주',t:'086790.KS'},{n:'NAVER',t:'035420.KS'},
-  {n:'LG전자',t:'066570.KS'},{n:'LS ELECTRIC',t:'010120.KS'},{n:'삼성화재',t:'000810.KS'},
-  {n:'HD현대일렉트릭',t:'267260.KS'},{n:'효성중공업',t:'298040.KS'},{n:'한화오션',t:'042660.KS'},
+  {n:'삼성바이오로직스',t:'207940.KS'},{n:'삼성생명',t:'032830.KS'},{n:'삼성물산',t:'028260.KS'},
+  {n:'KB금융',t:'105560.KS'},{n:'한화에어로스페이스',t:'012450.KS'},{n:'기아',t:'000270.KS'},
+  {n:'HD현대중공업',t:'329180.KS'},{n:'신한지주',t:'055550.KS'},{n:'두산에너빌리티',t:'034020.KS'},
+  {n:'현대모비스',t:'012330.KS'},{n:'셀트리온',t:'068270.KS'},{n:'SK',t:'034730.KS'},
+  {n:'삼성SDI',t:'006400.KS'},{n:'하나금융지주',t:'086790.KS'},{n:'LG전자',t:'066570.KS'},
+  {n:'NAVER',t:'035420.KS'},{n:'LS ELECTRIC',t:'010120.KS'},{n:'삼성화재',t:'000810.KS'},
+  {n:'HD현대일렉트릭',t:'267260.KS'},{n:'한화오션',t:'042660.KS'},{n:'효성중공업',t:'298040.KS'},
   {n:'HD한국조선해양',t:'009540.KS'},{n:'POSCO홀딩스',t:'005490.KS'},{n:'고려아연',t:'010130.KS'},
-  // 미국 시가총액 상위 30 (2026.08 기준)
+  // 미국 시가총액 상위 30 (2026.08.18 기준) — Caterpillar 이탈, GE Aerospace 신규 진입 반영
   {n:'NVIDIA',t:'NVDA'},{n:'Apple',t:'AAPL'},{n:'Alphabet A',t:'GOOGL'},{n:'Alphabet C',t:'GOOG'},
   {n:'Microsoft',t:'MSFT'},{n:'Amazon',t:'AMZN'},{n:'Broadcom',t:'AVGO'},{n:'Meta Platforms',t:'META'},
-  {n:'Tesla',t:'TSLA'},{n:'Berkshire Hathaway',t:'BRK.B'},{n:'Eli Lilly',t:'LLY'},{n:'Micron',t:'MU'},
+  {n:'Tesla',t:'TSLA'},{n:'Eli Lilly',t:'LLY'},{n:'Berkshire Hathaway',t:'BRK.B'},{n:'Micron',t:'MU'},
   {n:'JPMorgan Chase',t:'JPM'},{n:'Walmart',t:'WMT'},{n:'AMD',t:'AMD'},{n:'ExxonMobil',t:'XOM'},
-  {n:'Visa',t:'V'},{n:'Johnson & Johnson',t:'JNJ'},{n:'Mastercard',t:'MA'},{n:'Intel',t:'INTC'},
-  {n:'Cisco',t:'CSCO'},{n:'Bank of America',t:'BAC'},{n:'AbbVie',t:'ABBV'},{n:'Oracle',t:'ORCL'},
-  {n:'Costco',t:'COST'},{n:'Palantir',t:'PLTR'},{n:'Applied Materials',t:'AMAT'},{n:'Chevron',t:'CVX'},
-  {n:'Caterpillar',t:'CAT'},{n:'Lam Research',t:'LRCX'}
+  {n:'Johnson & Johnson',t:'JNJ'},{n:'Visa',t:'V'},{n:'Intel',t:'INTC'},{n:'Mastercard',t:'MA'},
+  {n:'AbbVie',t:'ABBV'},{n:'Bank of America',t:'BAC'},{n:'Cisco',t:'CSCO'},{n:'Costco',t:'COST'},
+  {n:'Palantir',t:'PLTR'},{n:'Oracle',t:'ORCL'},{n:'Lam Research',t:'LRCX'},{n:'Applied Materials',t:'AMAT'},
+  {n:'Chevron',t:'CVX'},{n:'GE Aerospace',t:'GE'}
 ];
 
 var tickerScanResults = {}; // ticker -> {n,t,rsi}
