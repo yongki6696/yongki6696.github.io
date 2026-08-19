@@ -950,7 +950,7 @@ function loadStock(s){
     if (meta.symbol && meta.symbol.toUpperCase() !== s.ticker.toUpperCase()) {
       throw new Error('존재하지 않는 종목코드입니다');
     }
-    if (meta.instrumentType && ['EQUITY','ETF','CRYPTOCURRENCY'].indexOf(meta.instrumentType) === -1) {
+    if (meta.instrumentType && ['EQUITY','ETF','CRYPTOCURRENCY','CURRENCY'].indexOf(meta.instrumentType) === -1) {
       throw new Error('존재하지 않는 종목코드입니다');
     }
 
