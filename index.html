@@ -135,6 +135,30 @@ input[type=range] { width:100%; accent-color:var(--danger); cursor:pointer; }
 .ticker-item .ti-rsi { color:#fb923c; font-weight:800; }
 .ticker-empty { padding:0 16px; font-size:11px; color:var(--muted); white-space:nowrap; }
 
+.rank-wrap {
+  background:var(--card); border:1px solid var(--border); border-radius:14px;
+  margin-bottom:16px; overflow:hidden;
+}
+.rank-head { display:flex; align-items:baseline; justify-content:space-between; padding:12px 14px 10px; }
+.rank-title { font-size:13px; font-weight:700; color:var(--text); }
+.rank-sub { font-size:10px; color:var(--muted); }
+.rank-list { max-height:340px; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+.rank-row {
+  display:flex; align-items:center; gap:8px; padding:8px 14px;
+  border-top:1px solid var(--border); cursor:pointer; touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
+}
+.rank-row:active { background:#1d1d1d; }
+.rank-no { flex-shrink:0; width:18px; font-size:11px; color:var(--muted); font-weight:700; text-align:center; }
+.rank-market {
+  flex-shrink:0; font-size:9px; font-weight:800; padding:2px 5px; border-radius:4px;
+  color:#fff; letter-spacing:.2px;
+}
+.rank-market.kr { background:#3b82f6; }
+.rank-market.us { background:#f59e0b; }
+.rank-name { flex:1; min-width:0; font-size:13px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.rank-rsi { flex-shrink:0; font-size:14px; font-weight:800; }
+
 .sec-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; padding:0 2px; }
 .sec-title { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.9px; }
 .sec-sub   { font-size:10px; color:var(--muted); }
@@ -532,6 +556,14 @@ body.edit-mode .edit-hint { display:block; }
     <div class="ticker-view">
       <div class="ticker-track" id="ticker-track"></div>
     </div>
+  </div>
+
+  <div class="rank-wrap hidden" id="rank-wrap">
+    <div class="rank-head">
+      <span class="rank-title">📊 시총 TOP15 RSI 순위</span>
+      <span class="rank-sub">과매도(낮음) → 과매수(높음)</span>
+    </div>
+    <div class="rank-list" id="rank-list"></div>
   </div>
 
   <div class="sec-header">
@@ -1100,12 +1132,48 @@ function scanTickerPool(){
       // 실패한 종목은 조용히 건너뜀 (전광판에 에러를 표시하지 않음)
     }).then(function(){
       remaining--;
-      if (remaining <= 0) { tickerScanning = false; renderTicker(); }
+      if (remaining <= 0) { tickerScanning = false; renderTicker(); renderRankList(); }
       else launchNext();
     });
   }
   var starters = Math.min(3, TICKER_POOL.length);
   for (var k=0; k<starters; k++) launchNext();
+}
+
+// 시총 TOP15(코스피/미국 각각) RSI 순위 리스트 — 전광판과 동일한 스캔 데이터를 재사용
+var RANK_TICKERS_KR = TICKER_POOL.slice(0, 15).map(function(x){ return x.t; });
+var RANK_TICKERS_US = TICKER_POOL.slice(30, 45).map(function(x){ return x.t; });
+var RANK_TICKER_SET = {};
+RANK_TICKERS_KR.concat(RANK_TICKERS_US).forEach(function(t){ RANK_TICKER_SET[t] = true; });
+
+function renderRankList(){
+  var wrap = document.getElementById('rank-wrap');
+  var list = document.getElementById('rank-list');
+  if (!wrap || !list) return;
+  var rows = Object.keys(tickerScanResults)
+    .map(function(k){ return tickerScanResults[k]; })
+    .filter(function(x){ return RANK_TICKER_SET[x.t] && x.rsi != null; })
+    .sort(function(a,b){ return a.rsi - b.rsi; });
+  if (!rows.length) { wrap.classList.add('hidden'); list.innerHTML = ''; return; }
+  list.innerHTML = rows.map(function(x, i){
+    var isKR = x.t.indexOf('.KS') !== -1;
+    var nameAttr = String(x.n).replace(/"/g,'&quot;');
+    return '<div class="rank-row" data-t="'+x.t+'" data-n="'+nameAttr+'">'
+      + '<span class="rank-no">'+(i+1)+'</span>'
+      + '<span class="rank-market '+(isKR?'kr':'us')+'">'+(isKR?'KR':'US')+'</span>'
+      + '<span class="rank-name">'+x.n+'</span>'
+      + '<span class="rank-rsi" style="color:'+rsiHexColor(x.rsi)+'">'+x.rsi+'</span>'
+      + '</div>';
+  }).join('');
+  wrap.classList.remove('hidden');
+}
+
+function rsiHexColor(v){
+  if(v==null) return '#a0a0a0';
+  if(v<20) return '#ef4444';
+  if(v<=30) return '#f59e0b';
+  if(v<=70) return '#22c55e';
+  return '#a78bfa';
 }
 
 // 전광판 항목을 탭하면 감시 목록(관심종목)에 바로 추가
@@ -3600,6 +3668,25 @@ function krsearchClose(){
       var item = e.target.closest('.ticker-item');
       if (!item) return;
       addTickerItemToWatchlist(item.getAttribute('data-t'), item.getAttribute('data-n'));
+    });
+  }
+  // 순위 리스트도 동일하게 탭하면 감시 목록에 추가 (스크롤 중엔 오작동 안하도록 구분)
+  var rankListEl = document.getElementById('rank-list');
+  if (rankListEl) {
+    var rankScrolling = false;
+    rankListEl.addEventListener('touchstart', function(){ rankScrolling = false; }, {passive:true});
+    rankListEl.addEventListener('touchmove', function(){ rankScrolling = true; }, {passive:true});
+    rankListEl.addEventListener('touchend', function(e){
+      if (rankScrolling) { rankScrolling = false; return; }
+      var row = e.target.closest('.rank-row');
+      if (!row) return;
+      e.preventDefault();
+      addTickerItemToWatchlist(row.getAttribute('data-t'), row.getAttribute('data-n'));
+    }, {passive:false});
+    rankListEl.addEventListener('click', function(e){
+      var row = e.target.closest('.rank-row');
+      if (!row) return;
+      addTickerItemToWatchlist(row.getAttribute('data-t'), row.getAttribute('data-n'));
     });
   }
 })();
