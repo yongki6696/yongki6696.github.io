@@ -745,33 +745,56 @@ window.addEventListener('orientationchange', function(){ setTimeout(positionToas
 
 // ══ Yahoo Finance ══
 var RANGE={'1d':'5y','1wk':'5y','1mo':'5y'};
-function fetchYahoo(ticker,period){
-  var ts=Date.now();
-  var url='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(ticker)+'?interval='+period+'&range='+RANGE[period]+'&t='+ts;
-  return tryNext(url,[
-    // codetabs/allorigins/thingproxy는 브라우저나 접속 경로(사파리/크롬/인앱브라우저)에 상관없이
-    // 동일하게 동작해서 1~4순위로 둠.
-    'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(url)+'&_cb='+ts,
-    'https://api.allorigins.win/raw?url='+encodeURIComponent(url)+'&_cb='+ts,
-    'https://api.allorigins.win/get?url='+encodeURIComponent(url)+'&_cb='+ts,
-    'https://thingproxy.freeboard.io/fetch/'+url+'&_cb='+ts,
-    // corsproxy.io는 요청 브라우저가 보내는 헤더에 따라 "github.io인지" 인식이 들쭉날쭉해서
-    // 사파리에서는 되고 크롬/인스타그램/카카오톡 인앱브라우저에서는 막히는 현상이 확인됨.
-    // 완전히 빼진 않고 최후순위 보험으로만 남겨둠.
-    'https://corsproxy.io/?url='+encodeURIComponent(url)+'&_cb='+ts,
-  ],0);
-}
-function tryNext(orig,proxies,i){
-  if(i>=proxies.length) return Promise.reject(new Error('데이터 로드 실패'));
-  return fetch(proxies[i],{signal:AbortSignal.timeout?AbortSignal.timeout(6000):undefined,cache:'no-store'})
+// 프록시 하나를 실제로 호출해서 파싱까지 하는 공용 함수
+function fetchOneProxy(proxyUrl){
+  return fetch(proxyUrl,{signal:AbortSignal.timeout?AbortSignal.timeout(6000):undefined,cache:'no-store'})
   .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
   .then(function(txt){
     var obj; try{obj=JSON.parse(txt);}catch(e){throw new Error('파싱 실패');}
     if(obj&&obj.contents) try{obj=JSON.parse(obj.contents);}catch(e){}
     if(!obj||!obj.chart||!obj.chart.result||!obj.chart.result[0]) throw new Error('데이터 없음');
     return obj;
-  })
-  .catch(function(){ return tryNext(orig,proxies,i+1); });
+  });
+}
+
+// 여러 프록시 중 가장 먼저 "성공"하는 것을 채택 (구형 환경 대비 Promise.any 수동 구현).
+// 전부 실패했을 때만 reject됨 — 하나가 느리거나 막혀있어도 다른 게 더 빠르면 그걸로 바로 처리됨.
+function raceProxies(promises){
+  return new Promise(function(resolve, reject){
+    var remaining = promises.length;
+    if (remaining === 0) { reject(new Error('데이터 로드 실패')); return; }
+    promises.forEach(function(p){
+      p.then(resolve).catch(function(){
+        remaining--;
+        if (remaining === 0) reject(new Error('데이터 로드 실패'));
+      });
+    });
+  });
+}
+
+function fetchYahoo(ticker,period){
+  var ts=Date.now();
+  var url='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(ticker)+'?interval='+period+'&range='+RANGE[period]+'&t='+ts;
+  var proxyUrls = [
+    'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(url)+'&_cb='+ts,
+    'https://api.allorigins.win/raw?url='+encodeURIComponent(url)+'&_cb='+ts,
+    'https://corsproxy.io/?url='+encodeURIComponent(url)+'&_cb='+ts,
+    'https://api.allorigins.win/get?url='+encodeURIComponent(url)+'&_cb='+ts,
+    'https://thingproxy.freeboard.io/fetch/'+url+'&_cb='+ts,
+  ];
+  // 앞의 3개(codetabs/allorigins/corsproxy.io)를 동시에 쏴서 그 사람 브라우저·네트워크에서
+  // 가장 먼저 성공하는 걸 채택함. 프록시마다 사파리엔 되고 크롬엔 안 되는 등 사람마다 다르게
+  // 막히기 때문에, 순서를 고정하는 대신 동시에 시도해서 자동으로 맞는 걸 찾는 방식으로 바꿈.
+  var raceCount = 3;
+  var racers = proxyUrls.slice(0, raceCount).map(fetchOneProxy);
+  return raceProxies(racers).catch(function(){
+    // 극히 드물게 셋 다 실패하면 나머지 프록시를 순서대로 재시도
+    return tryNext(url, proxyUrls.slice(raceCount), 0);
+  });
+}
+function tryNext(orig,proxies,i){
+  if(i>=proxies.length) return Promise.reject(new Error('데이터 로드 실패'));
+  return fetchOneProxy(proxies[i]).catch(function(){ return tryNext(orig,proxies,i+1); });
 }
 function calcRSI(closes){
   var c=closes.filter(function(v){return v!=null&&!isNaN(v);});
