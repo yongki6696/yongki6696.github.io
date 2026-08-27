@@ -749,12 +749,16 @@ function fetchYahoo(ticker,period){
   var ts=Date.now();
   var url='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(ticker)+'?interval='+period+'&range='+RANGE[period]+'&t='+ts;
   return tryNext(url,[
-    // corsproxy.io는 github.io 원본에는 무료+고속(Cloudflare 엣지)으로 동작하므로 1순위로 복귀
-    'https://corsproxy.io/?url='+encodeURIComponent(url)+'&_cb='+ts,
+    // codetabs/allorigins/thingproxy는 브라우저나 접속 경로(사파리/크롬/인앱브라우저)에 상관없이
+    // 동일하게 동작해서 1~4순위로 둠.
     'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(url)+'&_cb='+ts,
     'https://api.allorigins.win/raw?url='+encodeURIComponent(url)+'&_cb='+ts,
     'https://api.allorigins.win/get?url='+encodeURIComponent(url)+'&_cb='+ts,
     'https://thingproxy.freeboard.io/fetch/'+url+'&_cb='+ts,
+    // corsproxy.io는 요청 브라우저가 보내는 헤더에 따라 "github.io인지" 인식이 들쭉날쭉해서
+    // 사파리에서는 되고 크롬/인스타그램/카카오톡 인앱브라우저에서는 막히는 현상이 확인됨.
+    // 완전히 빼진 않고 최후순위 보험으로만 남겨둠.
+    'https://corsproxy.io/?url='+encodeURIComponent(url)+'&_cb='+ts,
   ],0);
 }
 function tryNext(orig,proxies,i){
