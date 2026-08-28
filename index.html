@@ -775,6 +775,9 @@ function raceProxies(promises){
 function fetchYahoo(ticker,period){
   var ts=Date.now();
   var url='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(ticker)+'?interval='+period+'&range='+RANGE[period]+'&t='+ts;
+  // RSIngTime만 전용으로 쓰는 Cloudflare Worker 프록시 — 다른 앱들과 자원을 나눠쓰지 않아서
+  // 공용 무료 프록시들보다 훨씬 안정적임. 이걸 최우선으로 시도함.
+  var dedicatedProxy = 'https://rsingtime-proxy.yongki6696.workers.dev/?url='+encodeURIComponent(url)+'&_cb='+ts;
   var proxyUrls = [
     'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(url)+'&_cb='+ts,
     'https://api.allorigins.win/raw?url='+encodeURIComponent(url)+'&_cb='+ts,
@@ -782,14 +785,13 @@ function fetchYahoo(ticker,period){
     'https://api.allorigins.win/get?url='+encodeURIComponent(url)+'&_cb='+ts,
     'https://thingproxy.freeboard.io/fetch/'+url+'&_cb='+ts,
   ];
-  // 앞의 3개(codetabs/allorigins/corsproxy.io)를 동시에 쏴서 그 사람 브라우저·네트워크에서
-  // 가장 먼저 성공하는 걸 채택함. 프록시마다 사파리엔 되고 크롬엔 안 되는 등 사람마다 다르게
-  // 막히기 때문에, 순서를 고정하는 대신 동시에 시도해서 자동으로 맞는 걸 찾는 방식으로 바꿈.
-  var raceCount = 3;
-  var racers = proxyUrls.slice(0, raceCount).map(fetchOneProxy);
-  return raceProxies(racers).catch(function(){
-    // 극히 드물게 셋 다 실패하면 나머지 프록시를 순서대로 재시도
-    return tryNext(url, proxyUrls.slice(raceCount), 0);
+  return fetchOneProxy(dedicatedProxy).catch(function(){
+    // 전용 프록시가 실패하는 극히 드문 경우에만, 기존 공용 프록시 3개를 동시 경주로 재시도
+    var raceCount = 3;
+    var racers = proxyUrls.slice(0, raceCount).map(fetchOneProxy);
+    return raceProxies(racers).catch(function(){
+      return tryNext(url, proxyUrls.slice(raceCount), 0);
+    });
   });
 }
 function tryNext(orig,proxies,i){
