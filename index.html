@@ -142,6 +142,14 @@ input[type=range] { width:100%; accent-color:var(--danger); cursor:pointer; }
 .rank-head { display:flex; align-items:baseline; justify-content:space-between; padding:12px 14px 10px; }
 .rank-title { font-size:13px; font-weight:700; color:var(--text); }
 .rank-sub { font-size:10px; color:var(--muted); }
+.rank-cols { display:grid; grid-template-columns:1fr 1fr; }
+.rank-col { min-width:0; }
+.rank-col:first-child { border-right:1px solid var(--border); }
+.rank-col-title {
+  display:flex; align-items:center; gap:6px; padding:8px 10px;
+  font-size:12px; font-weight:700; color:var(--text2);
+  border-top:1px solid var(--border); border-bottom:1px solid var(--border);
+}
 .rank-list { max-height:340px; overflow-y:auto; -webkit-overflow-scrolling:touch; }
 .rank-row {
   display:flex; align-items:center; gap:8px; padding:8px 14px;
@@ -566,7 +574,16 @@ body.edit-mode .edit-hint { display:block; }
       <span class="rank-title">📊 시총 TOP15 RSI 순위</span>
       <span class="rank-sub">과매도(낮음) → 과매수(높음)</span>
     </div>
-    <div class="rank-list" id="rank-list"></div>
+    <div class="rank-cols">
+      <div class="rank-col">
+        <div class="rank-col-title"><span class="rank-market kr">KR</span>한국</div>
+        <div class="rank-list" id="rank-list-kr"></div>
+      </div>
+      <div class="rank-col">
+        <div class="rank-col-title"><span class="rank-market us">US</span>미국</div>
+        <div class="rank-list" id="rank-list-us"></div>
+      </div>
+    </div>
   </div>
 
   <div class="sec-header">
@@ -1122,14 +1139,16 @@ var TICKER_POOL = [
   {n:'HD현대일렉트릭',t:'267260.KS'},{n:'한화오션',t:'042660.KS'},{n:'효성중공업',t:'298040.KS'},
   {n:'HD한국조선해양',t:'009540.KS'},{n:'POSCO홀딩스',t:'005490.KS'},{n:'고려아연',t:'010130.KS'},
   // 미국 시가총액 상위 30 (2026.08.18 기준) — SpaceX(SPCX) 2026.06.12 나스닥 상장 반영(시총 7위)
-  {n:'NVIDIA',t:'NVDA'},{n:'Apple',t:'AAPL'},{n:'Alphabet A',t:'GOOGL'},{n:'Alphabet C',t:'GOOG'},
+  // Alphabet은 Class A(GOOGL, 의결권 있음)만 대표로 남기고, 같은 회사인 Class C(GOOG)는 중복 제외 →
+  // 그 자리에 다음 순위인 GE Aerospace를 추가
+  {n:'NVIDIA',t:'NVDA'},{n:'Apple',t:'AAPL'},{n:'Alphabet',t:'GOOGL'},
   {n:'Microsoft',t:'MSFT'},{n:'Amazon',t:'AMZN'},{n:'SpaceX',t:'SPCX'},{n:'Broadcom',t:'AVGO'},
   {n:'Meta Platforms',t:'META'},{n:'Tesla',t:'TSLA'},{n:'Eli Lilly',t:'LLY'},{n:'Berkshire Hathaway',t:'BRK.B'},
   {n:'Micron',t:'MU'},{n:'JPMorgan Chase',t:'JPM'},{n:'Walmart',t:'WMT'},{n:'AMD',t:'AMD'},
   {n:'ExxonMobil',t:'XOM'},{n:'Johnson & Johnson',t:'JNJ'},{n:'Visa',t:'V'},{n:'Intel',t:'INTC'},
   {n:'Mastercard',t:'MA'},{n:'AbbVie',t:'ABBV'},{n:'Bank of America',t:'BAC'},{n:'Cisco',t:'CSCO'},
   {n:'Costco',t:'COST'},{n:'Palantir',t:'PLTR'},{n:'Oracle',t:'ORCL'},{n:'Lam Research',t:'LRCX'},
-  {n:'Applied Materials',t:'AMAT'},{n:'Chevron',t:'CVX'}
+  {n:'Applied Materials',t:'AMAT'},{n:'Chevron',t:'CVX'},{n:'GE Aerospace',t:'GE'}
 ];
 
 var tickerScanResults = {}; // ticker -> {n,t,rsi}
@@ -1237,28 +1256,38 @@ function scanTickerPool(){
 // 시총 TOP15(코스피/미국 각각) RSI 순위 리스트 — 전광판과 동일한 스캔 데이터를 재사용
 var RANK_TICKERS_KR = TICKER_POOL.slice(0, 15).map(function(x){ return x.t; });
 var RANK_TICKERS_US = TICKER_POOL.slice(30, 45).map(function(x){ return x.t; });
-var RANK_TICKER_SET = {};
-RANK_TICKERS_KR.concat(RANK_TICKERS_US).forEach(function(t){ RANK_TICKER_SET[t] = true; });
 
 function renderRankList(){
   var wrap = document.getElementById('rank-wrap');
-  var list = document.getElementById('rank-list');
-  if (!wrap || !list) return;
-  var rows = Object.keys(tickerScanResults)
-    .map(function(k){ return tickerScanResults[k]; })
-    .filter(function(x){ return RANK_TICKER_SET[x.t] && x.rsi != null; })
-    .sort(function(a,b){ return a.rsi - b.rsi; });
-  if (!rows.length) { wrap.classList.add('hidden'); list.innerHTML = ''; return; }
-  list.innerHTML = rows.map(function(x, i){
-    var isKR = x.t.indexOf('.KS') !== -1;
-    var nameAttr = String(x.n).replace(/"/g,'&quot;');
-    return '<div class="rank-row" data-t="'+x.t+'" data-n="'+nameAttr+'">'
-      + '<span class="rank-no">'+(i+1)+'</span>'
-      + '<span class="rank-market '+(isKR?'kr':'us')+'">'+(isKR?'KR':'US')+'</span>'
-      + '<span class="rank-name">'+x.n+'</span>'
-      + '<span class="rank-rsi" style="color:'+rsiHexColor(x.rsi)+'">'+x.rsi+'</span>'
-      + '</div>';
-  }).join('');
+  var listKR = document.getElementById('rank-list-kr');
+  var listUS = document.getElementById('rank-list-us');
+  if (!wrap || !listKR || !listUS) return;
+
+  function buildRows(tickerSet){
+    return Object.keys(tickerScanResults)
+      .map(function(k){ return tickerScanResults[k]; })
+      .filter(function(x){ return tickerSet[x.t] && x.rsi != null; })
+      .sort(function(a,b){ return a.rsi - b.rsi; });
+  }
+  function renderInto(el, rows){
+    el.innerHTML = rows.map(function(x, i){
+      var nameAttr = String(x.n).replace(/"/g,'&quot;');
+      return '<div class="rank-row" data-t="'+x.t+'" data-n="'+nameAttr+'">'
+        + '<span class="rank-no">'+(i+1)+'</span>'
+        + '<span class="rank-name">'+x.n+'</span>'
+        + '<span class="rank-rsi" style="color:'+rsiHexColor(x.rsi)+'">'+x.rsi+'</span>'
+        + '</div>';
+    }).join('');
+  }
+
+  var krSet = {}; RANK_TICKERS_KR.forEach(function(t){ krSet[t]=true; });
+  var usSet = {}; RANK_TICKERS_US.forEach(function(t){ usSet[t]=true; });
+  var rowsKR = buildRows(krSet);
+  var rowsUS = buildRows(usSet);
+
+  if (!rowsKR.length && !rowsUS.length) { wrap.classList.add('hidden'); listKR.innerHTML=''; listUS.innerHTML=''; return; }
+  renderInto(listKR, rowsKR);
+  renderInto(listUS, rowsUS);
   wrap.classList.remove('hidden');
 }
 
@@ -3767,25 +3796,28 @@ function krsearchClose(){
       addTickerItemToWatchlist(item.getAttribute('data-t'), item.getAttribute('data-n'));
     });
   }
-  // 순위 리스트도 동일하게 탭하면 감시 목록에 추가 (스크롤 중엔 오작동 안하도록 구분)
-  var rankListEl = document.getElementById('rank-list');
-  if (rankListEl) {
-    var rankScrolling = false;
-    rankListEl.addEventListener('touchstart', function(){ rankScrolling = false; }, {passive:true});
-    rankListEl.addEventListener('touchmove', function(){ rankScrolling = true; }, {passive:true});
-    rankListEl.addEventListener('touchend', function(e){
-      if (rankScrolling) { rankScrolling = false; return; }
+  // 순위 리스트도 동일하게 탭하면 감시 목록에 추가 (스크롤 중엔 오작동 안하도록 구분) - 한국/미국 컬럼 둘 다 적용
+  function bindRankListTap(elId){
+    var el = document.getElementById(elId);
+    if (!el) return;
+    var scrolling = false;
+    el.addEventListener('touchstart', function(){ scrolling = false; }, {passive:true});
+    el.addEventListener('touchmove', function(){ scrolling = true; }, {passive:true});
+    el.addEventListener('touchend', function(e){
+      if (scrolling) { scrolling = false; return; }
       var row = e.target.closest('.rank-row');
       if (!row) return;
       e.preventDefault();
       addTickerItemToWatchlist(row.getAttribute('data-t'), row.getAttribute('data-n'));
     }, {passive:false});
-    rankListEl.addEventListener('click', function(e){
+    el.addEventListener('click', function(e){
       var row = e.target.closest('.rank-row');
       if (!row) return;
       addTickerItemToWatchlist(row.getAttribute('data-t'), row.getAttribute('data-n'));
     });
   }
+  bindRankListTap('rank-list-kr');
+  bindRankListTap('rank-list-us');
 })();
 
 </script>
