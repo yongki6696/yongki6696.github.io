@@ -2864,6 +2864,7 @@ var KRSEARCH_DB = [
   {n:'엑세스바이오',t:'950130.KQ'},{n:'엑셈',t:'205100.KQ'},
   {n:'엑스큐어',t:'070300.KQ'},{n:'엑시콘',t:'092870.KQ'},
   {n:'엔바이오니아',t:'317870.KQ'},{n:'엔브이에이치코리아',t:'067570.KQ'},
+  {n:'엔화',t:'JPYKRW=X'},
   {n:'엔시트론',t:'101400.KQ'},{n:'엔씨소프트',t:'036570.KS'},
   {n:'엔에스',t:'217820.KQ'},{n:'엔에스쇼핑',t:'138250.KS'},
   {n:'엔에스엔',t:'031860.KQ'},{n:'엔에이치스팩13호',t:'310840.KQ'},
@@ -3484,13 +3485,19 @@ function krsearchTickerToName(ticker){
 function krsearchIsKRTicker(ticker){
   return /\.(KS|KQ)$/i.test(ticker || '');
 }
+// 엔화는 한국 관행상 "100엔당 몇 원"으로 표시하는데, 야후는 1엔 기준 값을 주기 때문에
+// 표시할 때만 100배 보정함 (RSI·등락률 계산은 비율이라 배율과 무관해서 영향 없음)
+function krsearchDisplayMultiplier(ticker){
+  return (ticker === 'JPYKRW=X') ? 100 : 1;
+}
 function krsearchFormatPrice(ticker, price){
+  var displayPrice = price * krsearchDisplayMultiplier(ticker);
   if (krsearchIsKRTicker(ticker) || /=X$/i.test(ticker || '')) {
     // 원화 또는 환율(1달러=몇원): 소수점 없이, 천단위 콤마
-    return '₩' + Math.round(price).toLocaleString('ko-KR');
+    return '₩' + Math.round(displayPrice).toLocaleString('ko-KR');
   }
   // 기존과 동일: 달러, 소수점 2자리
-  return '$' + price.toFixed(2);
+  return '$' + displayPrice.toFixed(2);
 }
 
 // 현재 선택된 탭 상태 (신규)
