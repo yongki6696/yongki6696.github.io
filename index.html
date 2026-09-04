@@ -150,7 +150,7 @@ input[type=range] { width:100%; accent-color:var(--danger); cursor:pointer; }
   font-size:12px; font-weight:700; color:var(--text2);
   border-top:1px solid var(--border); border-bottom:1px solid var(--border);
 }
-.rank-list { max-height:340px; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+.rank-list { /* 항상 15개 고정이라 스크롤 없이 내용 높이만큼 자연스럽게 늘어남 */ }
 .rank-row {
   display:flex; align-items:center; gap:8px; padding:8px 14px;
   border-top:1px solid var(--border); cursor:pointer; touch-action:manipulation;
@@ -165,7 +165,10 @@ input[type=range] { width:100%; accent-color:var(--danger); cursor:pointer; }
 .rank-market.kr { background:#3b82f6; }
 .rank-market.us { background:#f59e0b; }
 .rank-name { flex:1; min-width:0; font-size:13px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.rank-rsi-wrap { flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; line-height:1.2; }
+.rank-rsi-label { font-size:8px; color:var(--muted); font-weight:700; letter-spacing:.4px; }
 .rank-rsi { flex-shrink:0; font-size:14px; font-weight:800; }
+.rank-rsi.c-muted { color:var(--muted) !important; font-weight:600; }
 
 .sec-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; padding:0 2px; }
 .sec-title { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.9px; }
@@ -1127,28 +1130,26 @@ function loadStocksConcurrent(list, concurrency, onDone){
 // (검색DB 전체 3천여개를 스캔하는 건 무료 프록시로는 사실상 불가능해서 후보군을 제한함)
 // ══════════════════════════════════════════
 var TICKER_POOL = [
-  // 코스피 시가총액 상위 30 (2026.08.18 기준)
+  // 코스피 시가총액 상위 30 (2026.09.03 기준) — 우리금융지주 신규 진입, HD한국조선해양 30위 밖으로
   {n:'삼성전자',t:'005930.KS'},{n:'SK하이닉스',t:'000660.KS'},{n:'SK스퀘어',t:'402340.KS'},
   {n:'삼성전기',t:'009150.KS'},{n:'현대차',t:'005380.KS'},{n:'LG에너지솔루션',t:'373220.KS'},
-  {n:'삼성바이오로직스',t:'207940.KS'},{n:'삼성생명',t:'032830.KS'},{n:'삼성물산',t:'028260.KS'},
-  {n:'KB금융',t:'105560.KS'},{n:'한화에어로스페이스',t:'012450.KS'},{n:'기아',t:'000270.KS'},
-  {n:'HD현대중공업',t:'329180.KS'},{n:'신한지주',t:'055550.KS'},{n:'두산에너빌리티',t:'034020.KS'},
-  {n:'현대모비스',t:'012330.KS'},{n:'셀트리온',t:'068270.KS'},{n:'SK',t:'034730.KS'},
-  {n:'삼성SDI',t:'006400.KS'},{n:'하나금융지주',t:'086790.KS'},{n:'LG전자',t:'066570.KS'},
-  {n:'NAVER',t:'035420.KS'},{n:'LS ELECTRIC',t:'010120.KS'},{n:'삼성화재',t:'000810.KS'},
-  {n:'HD현대일렉트릭',t:'267260.KS'},{n:'한화오션',t:'042660.KS'},{n:'효성중공업',t:'298040.KS'},
-  {n:'HD한국조선해양',t:'009540.KS'},{n:'POSCO홀딩스',t:'005490.KS'},{n:'고려아연',t:'010130.KS'},
-  // 미국 시가총액 상위 30 (2026.08.18 기준) — SpaceX(SPCX) 2026.06.12 나스닥 상장 반영(시총 7위)
-  // Alphabet은 Class A(GOOGL, 의결권 있음)만 대표로 남기고, 같은 회사인 Class C(GOOG)는 중복 제외 →
-  // 그 자리에 다음 순위인 GE Aerospace를 추가
+  {n:'삼성바이오로직스',t:'207940.KS'},{n:'KB금융',t:'105560.KS'},{n:'삼성물산',t:'028260.KS'},
+  {n:'삼성생명',t:'032830.KS'},{n:'한화에어로스페이스',t:'012450.KS'},{n:'신한지주',t:'055550.KS'},
+  {n:'두산에너빌리티',t:'034020.KS'},{n:'기아',t:'000270.KS'},{n:'HD현대중공업',t:'329180.KS'},
+  {n:'삼성SDI',t:'006400.KS'},{n:'셀트리온',t:'068270.KS'},{n:'SK',t:'034730.KS'},
+  {n:'하나금융지주',t:'086790.KS'},{n:'현대모비스',t:'012330.KS'},{n:'LG전자',t:'066570.KS'},
+  {n:'삼성화재',t:'000810.KS'},{n:'NAVER',t:'035420.KS'},{n:'LS ELECTRIC',t:'010120.KS'},
+  {n:'POSCO홀딩스',t:'005490.KS'},{n:'한화오션',t:'042660.KS'},{n:'고려아연',t:'010130.KS'},
+  {n:'우리금융지주',t:'316140.KS'},{n:'HD현대일렉트릭',t:'267260.KS'},{n:'효성중공업',t:'298040.KS'},
+  // 미국 시가총액 상위 30 (2026.09.03 기준) — Coca-Cola·Caterpillar 재진입, GE Aerospace 순위 밖으로
   {n:'NVIDIA',t:'NVDA'},{n:'Apple',t:'AAPL'},{n:'Alphabet',t:'GOOGL'},
   {n:'Microsoft',t:'MSFT'},{n:'Amazon',t:'AMZN'},{n:'SpaceX',t:'SPCX'},{n:'Broadcom',t:'AVGO'},
-  {n:'Meta Platforms',t:'META'},{n:'Tesla',t:'TSLA'},{n:'Eli Lilly',t:'LLY'},{n:'Berkshire Hathaway',t:'BRK.B'},
-  {n:'Micron',t:'MU'},{n:'JPMorgan Chase',t:'JPM'},{n:'Walmart',t:'WMT'},{n:'AMD',t:'AMD'},
-  {n:'ExxonMobil',t:'XOM'},{n:'Johnson & Johnson',t:'JNJ'},{n:'Visa',t:'V'},{n:'Intel',t:'INTC'},
-  {n:'Mastercard',t:'MA'},{n:'AbbVie',t:'ABBV'},{n:'Bank of America',t:'BAC'},{n:'Cisco',t:'CSCO'},
-  {n:'Costco',t:'COST'},{n:'Palantir',t:'PLTR'},{n:'Oracle',t:'ORCL'},{n:'Lam Research',t:'LRCX'},
-  {n:'Applied Materials',t:'AMAT'},{n:'Chevron',t:'CVX'},{n:'GE Aerospace',t:'GE'}
+  {n:'Meta Platforms',t:'META'},{n:'Tesla',t:'TSLA'},{n:'Micron',t:'MU'},{n:'Berkshire Hathaway',t:'BRK.B'},
+  {n:'Eli Lilly',t:'LLY'},{n:'JPMorgan Chase',t:'JPM'},{n:'Walmart',t:'WMT'},{n:'AMD',t:'AMD'},
+  {n:'Visa',t:'V'},{n:'Johnson & Johnson',t:'JNJ'},{n:'ExxonMobil',t:'XOM'},{n:'Mastercard',t:'MA'},
+  {n:'Intel',t:'INTC'},{n:'AbbVie',t:'ABBV'},{n:'Oracle',t:'ORCL'},{n:'Bank of America',t:'BAC'},
+  {n:'Cisco',t:'CSCO'},{n:'Palantir',t:'PLTR'},{n:'Chevron',t:'CVX'},{n:'Costco',t:'COST'},
+  {n:'Lam Research',t:'LRCX'},{n:'Coca-Cola',t:'KO'},{n:'Caterpillar',t:'CAT'}
 ];
 
 var tickerScanResults = {}; // ticker -> {n,t,rsi}
@@ -1263,31 +1264,27 @@ function renderRankList(){
   var listUS = document.getElementById('rank-list-us');
   if (!wrap || !listKR || !listUS) return;
 
-  function buildRows(tickerSet){
-    return Object.keys(tickerScanResults)
-      .map(function(k){ return tickerScanResults[k]; })
-      .filter(function(x){ return tickerSet[x.t] && x.rsi != null; })
-      .sort(function(a,b){ return a.rsi - b.rsi; });
-  }
-  function renderInto(el, rows){
-    el.innerHTML = rows.map(function(x, i){
-      var nameAttr = String(x.n).replace(/"/g,'&quot;');
-      return '<div class="rank-row" data-t="'+x.t+'" data-n="'+nameAttr+'">'
+  // RSI로 재정렬하지 않고, 시가총액 순서(TICKER_POOL에 이미 담긴 순서) 그대로 1~15위 고정 표시
+  function renderInto(el, pool){
+    el.innerHTML = pool.map(function(item, i){
+      var result = tickerScanResults[item.t];
+      var rsi = result ? result.rsi : null;
+      var rsiValueHTML = rsi != null
+        ? '<span class="rank-rsi" style="color:'+rsiHexColor(rsi)+'">'+rsi+'</span>'
+        : '<span class="rank-rsi c-muted">—</span>';
+      var nameAttr = String(item.n).replace(/"/g,'&quot;');
+      return '<div class="rank-row" data-t="'+item.t+'" data-n="'+nameAttr+'">'
         + '<span class="rank-no">'+(i+1)+'</span>'
-        + '<span class="rank-name">'+x.n+'</span>'
-        + '<span class="rank-rsi" style="color:'+rsiHexColor(x.rsi)+'">'+x.rsi+'</span>'
+        + '<span class="rank-name">'+item.n+'</span>'
+        + '<span class="rank-rsi-wrap"><span class="rank-rsi-label">RSI</span>'+rsiValueHTML+'</span>'
         + '</div>';
     }).join('');
   }
 
-  var krSet = {}; RANK_TICKERS_KR.forEach(function(t){ krSet[t]=true; });
-  var usSet = {}; RANK_TICKERS_US.forEach(function(t){ usSet[t]=true; });
-  var rowsKR = buildRows(krSet);
-  var rowsUS = buildRows(usSet);
-
-  if (!rowsKR.length && !rowsUS.length) { wrap.classList.add('hidden'); listKR.innerHTML=''; listUS.innerHTML=''; return; }
-  renderInto(listKR, rowsKR);
-  renderInto(listUS, rowsUS);
+  var krPool = TICKER_POOL.slice(0, 15);
+  var usPool = TICKER_POOL.slice(30, 45);
+  renderInto(listKR, krPool);
+  renderInto(listUS, usPool);
   wrap.classList.remove('hidden');
 }
 
