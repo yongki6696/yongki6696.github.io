@@ -96,11 +96,7 @@ main { max-width:680px; margin:0 auto; padding:calc(env(safe-area-inset-top) + 8
 .btn-add { flex:1; height:46px; background:var(--accent); color:#fff; border:none; border-radius:10px; font-size:15px; font-weight:700; cursor:pointer; touch-action:manipulation; -webkit-appearance:none; transition:background .15s,transform .1s; }
 .btn-add:active { background:#1d4ed8; transform:scale(0.96); }
 
-.thr-panel { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:14px 16px; margin-bottom:20px; }
-.thr-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
-.thr-label { font-size:13px; color:var(--text2); }
-.thr-val { font-size:24px; font-weight:700; color:var(--danger); }
-input[type=range] { width:100%; accent-color:var(--danger); cursor:pointer; }
+
 
 .ticker-wrap {
   display:flex; align-items:center; gap:0; background:#0d0603;
@@ -227,7 +223,6 @@ body.edit-mode .card { cursor:default; }
 .rsi-big { font-size:36px; font-weight:700; line-height:1; text-align:right; }
 .bar-wrap { position:relative; height:4px; background:var(--border); border-radius:2px; margin-bottom:12px; overflow:visible; }
 .bar-fill { height:100%; border-radius:2px; transition:width .5s ease; }
-.bar-mark { position:absolute; top:-5px; width:2px; height:14px; background:var(--danger); border-radius:1px; opacity:.6; }
 .card-foot { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); border-top:1px solid var(--border); padding-top:10px; }
 .mini-chart { width:100%; height:56px; margin:8px 0 4px; display:block; }
 .mini-chart path.line { fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
@@ -559,14 +554,6 @@ body.edit-mode .edit-hint { display:block; }
     </div>
   </div>
 
-  <div class="thr-panel">
-    <div class="thr-top">
-      <span class="thr-label">🔴 RSI 알림 임계값</span>
-      <span class="thr-val" id="thr-display">30</span>
-    </div>
-    <input type="range" id="inp-threshold" min="10" max="50" value="30">
-  </div>
-
   <div class="ticker-wrap hidden" id="ticker-wrap">
     <div class="ticker-tag">🔥 RSI&lt;40</div>
     <div class="ticker-view">
@@ -753,7 +740,7 @@ body.edit-mode .edit-hint { display:block; }
 
 // ══ 상태 ══
 var stocks    = [];
-var threshold = parseInt(localStorage.getItem('rsi_thr') || '30');
+var threshold = 30; // RSI 경보 기준값 — 설정 UI 없이 30으로 고정
 var prevAlert = new Set(JSON.parse(localStorage.getItem('rsi_prev') || '[]'));
 var autoTimer = null;
 var autoRem   = 0;
@@ -1560,8 +1547,7 @@ function renderCard(s){
     +'<div class="card-body"><div>'+priceHTML+mddDisplay+'</div>'
     +'<div><div class="rsi-label-sm">RSI(14) · '+pLabel(s.period)+'</div>'+rsiHTML+'</div></div>'
     +chartHTML+divHTML+macHTML
-    +'<div class="bar-wrap"><div class="bar-fill" style="width:'+pct+'%;background:'+barColor(v)+'"></div>'
-    +'<div class="bar-mark" style="left:'+threshold+'%"></div></div>'
+    +'<div class="bar-wrap"><div class="bar-fill" style="width:'+pct+'%;background:'+barColor(v)+'"></div></div>'
     +'<div class="card-foot"><span>'+pLabel(s.period)+' · 최근 '+chartDisplayLen+'일</span><span>'+footRight+'</span></div>';
 }
 
@@ -2168,15 +2154,6 @@ function setupAutoRefresh(){
 }
 
 // ── 임계값 ──
-function updateThreshold(val){
-  threshold=parseInt(val);
-  document.getElementById('thr-display').textContent=threshold;
-  localStorage.setItem('rsi_thr',threshold);
-  stocks.forEach(function(s){renderCard(s); applyCardFilter(s);});
-  updateStats();
-  updateEmptyState();
-}
-
 // ── 알림 권한 ──
 function requestNotif(){
   if(typeof Notification==='undefined'){
@@ -2205,7 +2182,6 @@ bindBtn('btn-notif',requestNotif);
 bindBtn('btn-pwa-close',function(){document.getElementById('pwa-banner').classList.add('hidden');});
 document.getElementById('inp-ticker').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();addStock();}});
 document.getElementById('inp-interval').addEventListener('change',setupAutoRefresh);
-document.getElementById('inp-threshold').addEventListener('input',function(){updateThreshold(this.value);});
 
 if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('./sw.js').catch(function(){});});}
 
@@ -3809,8 +3785,6 @@ function krsearchClose(){
 })();
 
 (function init(){
-  document.getElementById('inp-threshold').value=threshold;
-  document.getElementById('thr-display').textContent=threshold;
   checkBanners();
   loadStocksFromStorage();
   renderAll(); updateStats(); renderLastUpdate(null);
