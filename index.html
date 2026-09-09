@@ -221,10 +221,8 @@ body.edit-mode .card { cursor:default; }
 .price-chg  { font-size:12px; margin-top:3px; }
 .rsi-label-sm { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin-bottom:3px; text-align:right; }
 .rsi-big { font-size:36px; font-weight:700; line-height:1; text-align:right; }
-.bar-wrap { position:relative; height:4px; background:var(--border); border-radius:2px; margin-bottom:12px; overflow:visible; }
-.bar-fill { height:100%; border-radius:2px; transition:width .5s ease; }
 .card-foot { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); border-top:1px solid var(--border); padding-top:10px; }
-.mini-chart { width:100%; height:56px; margin:8px 0 4px; display:block; }
+.mini-chart { width:100%; height:84px; margin:8px 0 4px; display:block; }
 .mini-chart path.line { fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 .mini-chart path.area { stroke:none; }
 .chart-legend { display:flex; gap:12px; margin-bottom:4px; }
@@ -1387,7 +1385,7 @@ function mddHTML(s){
 function makeMiniChart(data,color,displayLen){
   if(!data||data.length<2) return '';
   displayLen = displayLen || Math.min(180, data.length);
-  var display=data.slice(-displayLen),W=320,H=60,PAD=4;
+  var display=data.slice(-displayLen),W=320,H=90,PAD=4;
   var minP=Math.min.apply(null,display),maxP=Math.max.apply(null,display),range=maxP-minP||1;
   function tx(i,len){return PAD+(i/(len-1))*(W-PAD*2);}
   function ty(v){return H-PAD-((v-minP)/range)*(H-PAD*2);}
@@ -1419,7 +1417,7 @@ function makeDivMarkers(data, div, displayLen){
   if(!data||!div||div.idx1==null||div.idx2==null) return '';
   displayLen = displayLen || Math.min(180, data.length);
   var dataStartIdx=data.length-displayLen;
-  var W=320,H=60,PAD=4;
+  var W=320,H=90,PAD=4;
   var display=data.slice(-displayLen);
   var minP=Math.min.apply(null,display),maxP=Math.max.apply(null,display),range=maxP-minP||1;
   function tx(i){return PAD+(i/(displayLen-1))*(W-PAD*2);}
@@ -1446,7 +1444,7 @@ function makeOversoldMarkers(data, displayLen){
   if(!data||data.length<20) return '';
   displayLen = displayLen || Math.min(180, data.length);
   var dataStartIdx=data.length-displayLen;
-  var W=320,H=60,PAD=4;
+  var W=320,H=90,PAD=4;
   var display=data.slice(-displayLen);
   var minP=Math.min.apply(null,display),maxP=Math.max.apply(null,display),range=maxP-minP||1;
   function tx(i){return PAD+(i/(displayLen-1))*(W-PAD*2);}
@@ -1489,7 +1487,6 @@ function divRequiredDisplayLen(data, div){
 
 // ── 카드 렌더 ──
 function rsiColor(v){if(v==null)return 'c-muted';if(v<20)return 'c-danger';if(v<=30)return 'c-warn';if(v<=70)return 'c-ok';return 'c-purple';}
-function barColor(v){if(v==null)return '#242424';if(v<20)return '#ef4444';if(v<=30)return '#f59e0b';if(v<=70)return '#22c55e';return '#a78bfa';}
 function getBadge(v,err){
   if(err) return '<span class="badge b-err">오류</span>';
   if(v==null) return '<span class="badge b-load"><span class="spin"></span></span>';
@@ -1503,7 +1500,7 @@ function pLabel(p){return p==='1d'?'일봉':p==='1wk'?'주봉':'월봉';}
 
 function renderCard(s){
   var el=document.getElementById('card-'+s.ticker+'-'+s.period); if(!el) return;
-  var v=s.rsi, pct=v!=null?Math.min(v,100):0;
+  var v=s.rsi;
   var chg=(s.price&&s.prevClose)?((s.price-s.prevClose)/s.prevClose*100).toFixed(2):null;
   var isUp=chg&&parseFloat(chg)>=0;
   var chgHTML=chg?'<div class="price-chg '+(isUp?'c-ok':'c-danger')+'">'+(isUp?'▲+':'▼')+chg+'%</div>':'';
@@ -1547,7 +1544,6 @@ function renderCard(s){
     +'<div class="card-body"><div>'+priceHTML+mddDisplay+'</div>'
     +'<div><div class="rsi-label-sm">RSI(14) · '+pLabel(s.period)+'</div>'+rsiHTML+'</div></div>'
     +chartHTML+divHTML+macHTML
-    +'<div class="bar-wrap"><div class="bar-fill" style="width:'+pct+'%;background:'+barColor(v)+'"></div></div>'
     +'<div class="card-foot"><span>'+pLabel(s.period)+' · 최근 '+chartDisplayLen+'일</span><span>'+footRight+'</span></div>';
 }
 
