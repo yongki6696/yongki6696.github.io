@@ -251,6 +251,24 @@ body.edit-mode .card { cursor:default; }
 .btn-x { background:transparent; color:var(--muted); border:1px solid var(--border); border-radius:8px; padding:5px 10px; font-size:12px; cursor:pointer; }
 
 /* 편집모드 힌트 배너 */
+.wlsearch-wrap {
+  display:flex; align-items:center; gap:8px;
+  background:var(--card); border:1px solid var(--border); border-radius:12px;
+  padding:0 12px; margin-bottom:12px; height:42px;
+}
+.wlsearch-icon { font-size:13px; flex-shrink:0; opacity:.7; }
+#wlsearch-input {
+  flex:1; min-width:0; background:transparent; border:none; outline:none;
+  color:var(--text); font-size:14px; height:100%; font-family:inherit;
+}
+#wlsearch-input::placeholder { color:var(--muted); }
+.wlsearch-clear {
+  flex-shrink:0; background:#2a2a2a; border:none; color:var(--text2);
+  width:22px; height:22px; border-radius:50%; font-size:11px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; padding:0;
+  touch-action:manipulation; -webkit-tap-highlight-color:transparent;
+}
+.wlsearch-clear:active { background:#3a3a3a; }
 .edit-hint { background:rgba(37,99,235,.1); border:1px solid rgba(37,99,235,.25); border-radius:12px; padding:10px 14px; margin-bottom:12px; font-size:12px; color:var(--accent2); display:none; }
 body.edit-mode .edit-hint { display:block; }
 
@@ -579,6 +597,12 @@ body.edit-mode .edit-hint { display:block; }
   <div class="sec-header">
     <div class="sec-title">감시 목록</div>
     <div class="sec-sub" id="next-refresh"></div>
+  </div>
+
+  <div class="wlsearch-wrap" id="wlsearch-wrap">
+    <span class="wlsearch-icon">🔍</span>
+    <input type="text" id="wlsearch-input" placeholder="감시 목록에서 찾기 (예: 삼성, AAPL)" autocomplete="off">
+    <button class="wlsearch-clear hidden" id="wlsearch-clear" aria-label="검색어 지우기">✕</button>
   </div>
 
   <div class="edit-hint">⠿ 핸들을 길게 눌러 드래그하면 순서를 바꿀 수 있어요</div>
@@ -1049,7 +1073,10 @@ function loadStock(s){
     // 전혀 다른 엉뚱한 데이터를 대신 반환하는데, 이때 meta.symbol은 요청값과 우연히 같게 나올 수 있어
     // 심볼 비교만으로는 걸러지지 않음. instrumentType까지 함께 확인해야 확실히 차단됨
     // (정상 주식/ETF는 EQUITY 또는 ETF인데, 잘못된 코드는 엉뚱하게 MUTUALFUND 등으로 매칭되어 옴).
-    if (meta.symbol && meta.symbol.toUpperCase() !== s.ticker.toUpperCase()) {
+    // 단, 환율(=X)은 KRW=X로 요청해도 Yahoo가 USDKRW=X처럼 통화쌍 전체 이름으로 돌려주는 경우가 있어
+    // 심볼 엄격 비교에서 제외함 (instrumentType === 'CURRENCY' 검증으로 충분히 걸러짐)
+    var isFxTicker = /=X$/i.test(s.ticker);
+    if (!isFxTicker && meta.symbol && meta.symbol.toUpperCase() !== s.ticker.toUpperCase()) {
       throw new Error('존재하지 않는 종목코드입니다');
     }
     if (meta.instrumentType && ['EQUITY','ETF','CRYPTOCURRENCY','CURRENCY'].indexOf(meta.instrumentType) === -1) {
@@ -1551,10 +1578,25 @@ function renderCard(s){
 // ── 전체 렌더 ──
 // ── 감시 종목 / RSI 경보 필터 ──
 var cardFilter = 'all'; // 'all' 또는 'alert'
+var wlSearchQuery = ''; // 감시 목록 내 검색어
 
 function stockMatchesFilter(s){
-  if (cardFilter === 'alert') return s.rsi != null && s.rsi <= threshold;
+  if (cardFilter === 'alert' && !(s.rsi != null && s.rsi <= threshold)) return false;
+  if (wlSearchQuery) {
+    var q = wlSearchQuery;
+    var name = (s.name || '').toLowerCase();
+    var ticker = (s.ticker || '').toLowerCase();
+    if (name.indexOf(q) === -1 && ticker.indexOf(q) === -1) return false;
+  }
   return true;
+}
+
+function setWatchlistSearch(q){
+  wlSearchQuery = (q || '').trim().toLowerCase();
+  var clearBtn = document.getElementById('wlsearch-clear');
+  if (clearBtn) clearBtn.classList.toggle('hidden', !wlSearchQuery);
+  stocks.forEach(applyCardFilter);
+  updateEmptyState();
 }
 
 function applyCardFilter(s){
@@ -1573,6 +1615,18 @@ function updateEmptyState(){
   } else if (visibleCount === 0) {
     emptyEl.style.display = 'none';
     emptyFilteredEl.classList.remove('hidden');
+    // 검색 중인지 여부에 따라 안내 문구를 다르게 표시
+    var titleEl = emptyFilteredEl.querySelector('.empty-title');
+    var descEl = emptyFilteredEl.querySelector('.empty-desc');
+    if (titleEl && descEl) {
+      if (wlSearchQuery) {
+        titleEl.textContent = '검색 결과가 없어요';
+        descEl.textContent = '감시 목록에 해당하는 종목이 없습니다';
+      } else {
+        titleEl.textContent = '조건에 맞는 종목이 없어요';
+        descEl.textContent = '지금은 RSI 경보가 뜬 종목이 없습니다';
+      }
+    }
   } else {
     emptyEl.style.display = 'none';
     emptyFilteredEl.classList.add('hidden');
@@ -3789,6 +3843,14 @@ function krsearchClose(){
   var filterAlertBox = document.getElementById('filter-alert');
   if (filterAllBox) filterAllBox.addEventListener('click', function(){ setCardFilter('all'); });
   if (filterAlertBox) filterAlertBox.addEventListener('click', function(){ setCardFilter('alert'); });
+  // 감시 목록 내 검색
+  var wlInput = document.getElementById('wlsearch-input');
+  var wlClear = document.getElementById('wlsearch-clear');
+  if (wlInput) wlInput.addEventListener('input', function(){ setWatchlistSearch(this.value); });
+  if (wlClear) wlClear.addEventListener('click', function(){
+    if (wlInput) { wlInput.value = ''; wlInput.focus(); }
+    setWatchlistSearch('');
+  });
   loadStocksConcurrent(stocks, 3);
   setupAutoRefresh();
   // 감시 목록 로딩과 겹치지 않도록 살짝 지연 후 전광판(시총 상위 60종목) 스캔 시작
