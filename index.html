@@ -448,6 +448,36 @@ body.edit-mode .edit-hint { display:block; }
 .chat-msg .nick { color:var(--accent2); font-weight:700; margin-right:6px; }
 .chat-msg .txt { color:var(--text); }
 .chat-msg .time { color:var(--muted); font-size:10px; margin-left:6px; white-space:nowrap; }
+/* 답글: 원본 메시지 인용 블록 */
+.chat-quote {
+  border-left:2px solid var(--accent2); background:rgba(37,99,235,.08);
+  border-radius:0 6px 6px 0; padding:4px 8px; margin:2px 0 4px;
+  font-size:11px; line-height:1.4;
+}
+.chat-quote .q-nick { color:var(--accent2); font-weight:700; margin-right:5px; }
+.chat-quote .q-text { color:var(--muted); }
+.chat-reply-btn {
+  background:none; border:none; color:var(--muted); font-size:10px;
+  cursor:pointer; padding:1px 4px; margin-left:4px; border-radius:4px;
+  touch-action:manipulation; -webkit-tap-highlight-color:transparent; font-family:inherit;
+}
+.chat-reply-btn:active { background:#2a2a2a; color:var(--accent2); }
+/* 답글 작성 중 표시 바 */
+.chat-replybar {
+  display:flex; align-items:center; gap:8px; margin-top:10px;
+  background:rgba(37,99,235,.10); border:1px solid rgba(37,99,235,.28);
+  border-radius:10px; padding:7px 10px;
+}
+.chat-replybar-icon { color:var(--accent2); font-size:13px; flex-shrink:0; }
+.chat-replybar-body { flex:1; min-width:0; }
+.chat-replybar-nick { font-size:11px; font-weight:700; color:var(--accent2); }
+.chat-replybar-text { font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.chat-replybar-cancel {
+  flex-shrink:0; background:#2a2a2a; border:none; color:var(--text2);
+  width:20px; height:20px; border-radius:50%; font-size:10px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; padding:0;
+  touch-action:manipulation; -webkit-tap-highlight-color:transparent;
+}
 .chat-empty { color:var(--muted); font-size:12px; text-align:center; padding:32px 0; }
 .chat-img-wrap { margin-top:6px; }
 .chat-img {
@@ -730,6 +760,14 @@ body.edit-mode .edit-hint { display:block; }
     <div class="chat-nick-error hidden" id="chat-nick-error">이미 사용 중인 닉네임이에요. 다른 닉네임을 입력해주세요.</div>
     <div class="chat-msgs" id="chat-msgs">
       <div class="chat-empty">아직 메시지가 없어요. 첫 메시지를 남겨보세요!</div>
+    </div>
+    <div class="chat-replybar hidden" id="chat-replybar">
+      <span class="chat-replybar-icon">↩</span>
+      <div class="chat-replybar-body">
+        <div class="chat-replybar-nick" id="chat-replybar-nick"></div>
+        <div class="chat-replybar-text" id="chat-replybar-text"></div>
+      </div>
+      <button type="button" class="chat-replybar-cancel" id="chat-replybar-cancel" aria-label="답글 취소">✕</button>
     </div>
     <div class="chat-preview hidden" id="chat-preview">
       <img id="chat-preview-img" src="" alt="첨부 이미지 미리보기">
@@ -1942,7 +1980,14 @@ function toggleEdit(){
       // loading="lazy"를 쓰지 않음: 이미지가 스크롤을 맨 아래로 내린 "이후"에 뒤늦게 로딩되면
       // 그만큼 내용 높이가 늘어나 스크롤이 다시 위로 밀려 보이는 문제가 있었음
       var imgHTML = m.img ? '<div class="chat-img-wrap"><img class="chat-img" src="'+m.img+'"></div>' : '';
-      return '<div class="chat-msg"><span class="nick">'+escapeHTML(m.n)+'</span>'+textHTML+'<span class="time">'+timeLabel(m.t)+'</span>'+imgHTML+'</div>';
+      // 답글인 경우 원본 메시지를 인용 블록으로 위에 표시 (rn: 원본 닉네임, rm: 원본 내용 일부)
+      var quoteHTML = m.rn
+        ? '<div class="chat-quote"><span class="q-nick">'+escapeHTML(m.rn)+'</span><span class="q-text">'+escapeHTML(m.rm||'')+'</span></div>'
+        : '';
+      // 답글 버튼: 인용에 쓸 원본 정보를 data 속성에 담아둠
+      var replySrc = m.m || (m.img ? '📷 사진' : '');
+      var replyBtn = '<button type="button" class="chat-reply-btn" data-rn="'+escapeHTML(m.n)+'" data-rm="'+escapeHTML(replySrc)+'">답글</button>';
+      return '<div class="chat-msg">'+quoteHTML+'<span class="nick">'+escapeHTML(m.n)+'</span>'+textHTML+'<span class="time">'+timeLabel(m.t)+'</span>'+replyBtn+imgHTML+'</div>';
     }).join('');
     wrap.innerHTML = html || '<div class="chat-empty">아직 메시지가 없어요. 첫 메시지를 남겨보세요!</div>';
     if(forceBottom || nearBottom){
@@ -2077,6 +2122,27 @@ function toggleEdit(){
     });
   }
 
+  // ── 답글 기능 ──
+  var replyTarget = null; // {n: 원본닉네임, m: 원본내용}
+
+  function setReplyTarget(nick, text){
+    replyTarget = { n: nick, m: (text||'').slice(0, 60) }; // 인용은 60자까지만 보관
+    var bar = document.getElementById('chat-replybar');
+    var nickEl = document.getElementById('chat-replybar-nick');
+    var textEl = document.getElementById('chat-replybar-text');
+    if(nickEl) nickEl.textContent = nick + '에게 답글';
+    if(textEl) textEl.textContent = replyTarget.m;
+    if(bar) bar.classList.remove('hidden');
+    var input = document.getElementById('chat-input');
+    if(input) input.focus();
+  }
+
+  function clearReplyTarget(){
+    replyTarget = null;
+    var bar = document.getElementById('chat-replybar');
+    if(bar) bar.classList.add('hidden');
+  }
+
   function sendMsg(){
     if(sending) return;
     var input = document.getElementById('chat-input');
@@ -2089,6 +2155,8 @@ function toggleEdit(){
     if(btn) btn.disabled = true;
     var payload = { n:getNick(), m: txt || '📷 사진', t:Date.now() };
     if (pendingImage) payload.img = pendingImage;
+    // 답글이면 원본 정보를 함께 저장 (rn/rm은 선택 필드라 기존 메시지와도 호환됨)
+    if (replyTarget) { payload.rn = replyTarget.n; payload.rm = replyTarget.m; }
     fetch(FB+'/chat/messages.json', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -2096,6 +2164,7 @@ function toggleEdit(){
     }).then(function(){
       input.value = '';
       clearPreview();
+      clearReplyTarget();
       loadMsgs();
     }).catch(function(){}).then(function(){
       sending = false;
@@ -2117,6 +2186,15 @@ function toggleEdit(){
   var errBox = document.getElementById('chat-nick-error');
 
   if(sendBtn) sendBtn.addEventListener('click', sendMsg);
+  // 답글 버튼은 메시지 목록이 계속 다시 그려지므로 위임 방식으로 한 번만 바인딩
+  var msgsEl = document.getElementById('chat-msgs');
+  if(msgsEl) msgsEl.addEventListener('click', function(e){
+    var btn = e.target.closest('.chat-reply-btn');
+    if(!btn) return;
+    setReplyTarget(btn.getAttribute('data-rn'), btn.getAttribute('data-rm'));
+  });
+  var replyCancelBtn = document.getElementById('chat-replybar-cancel');
+  if(replyCancelBtn) replyCancelBtn.addEventListener('click', clearReplyTarget);
   if(chatInput) chatInput.addEventListener('keydown', function(e){
     if(e.key==='Enter'){ e.preventDefault(); sendMsg(); }
   });
