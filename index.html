@@ -3621,7 +3621,7 @@ var US_STOCK_DB = [{n:'Apple',t:'AAPL'},{n:'AbbVie',t:'ABBV'},{n:'Airbnb',t:'ABN
 {n:'Best Buy Co.',t:'BBY'},{n:'Jacobs Solutions',t:'J'},{n:'Hyatt Hotels A',t:'H'},{n:'Gen Digital',t:'GEN'},{n:'Jones Lang LaSalle',t:'JLL'},{n:'Ball',t:'BALL'},{n:'Sterling Infrastructure',t:'STRL'},{n:'Kimco Realty Corporation',t:'KIM'},{n:'W. P. Carey Inc. REIT',t:'WPC'},{n:'Medpace Holdings',t:'MEDP'},
 {n:'Nutanix A',t:'NTNX'},{n:'Neurocrine Biosciences',t:'NBIX'},{n:'News A',t:'NWSA'},{n:'Clean Harbors',t:'CLH'},{n:'Lamar Advertising A',t:'LAMR'},{n:'BridgeBio Pharma',t:'BBIO'},{n:'Talen Energy',t:'TLN'},{n:'Coeur Mining',t:'CDE'},{n:'Pinnacle Financial Partners Inc. Common stock',t:'PNFP'},{n:'PTC',t:'PTC'},
 {n:'Host Hotels & Resorts',t:'HST'},{n:'QXO',t:'QXO'},{n:'Circle Internet Group A',t:'CRCL'},{n:'Corebridge Financial',t:'CRBG'},{n:'UL Solutions A',t:'ULS'},{n:'Mid-America Apartment Communities',t:'MAA'},{n:'Reinsurance Group of America',t:'RGA'},{n:'Quantinuum A',t:'QNT'},{n:'Mueller Industries',t:'MLI'},{n:'IES Holdings',t:'IESC'},
-{n:'BWX Technologies',t:'BWXT'},{n:'Stanley Black & Decker',t:'SWK'},{n:'Carlisle Companies',t:'CSL'},{n:'Lincoln Electric Holdings',t:'LECO'},{n:'TransUnion',t:'TRU'},{n:'Textron',t:'TXT'},{n:'Lennox International',t:'LII'},{n:'Nextpower A',t:'NXT'},{n:'Masco',t:'MAS'},{n:'IonQ',t:'IONQ'},
+{n:'BWX Technologies',t:'BWXT'},{n:'Stanley Black & Decker',t:'SWK'},{n:'Carlisle Companies',t:'CSL'},{n:'Lincoln Electric Holdings',t:'LECO'},{n:'TransUnion',t:'TRU'},{n:'Textron',t:'TXT'},{n:'Lennox International',t:'LII'},{n:'Nextpower A',t:'NXT'},{n:'Masco',t:'MAS'},{n:'IonQ',t:'IONQ',k:'아이온큐'},{n:'IREN',t:'IREN',k:'아이렌'},
 {n:'Aramark',t:'ARMK'},{n:'Albemarle',t:'ALB'},{n:'RPM International',t:'RPM'},{n:'Viper Energy A',t:'VNOM'},{n:'Omega Healthcare Investors',t:'OHI'},{n:'Logitech International S.A.',t:'LOGI'},{n:'HF Sinclair',t:'DINO'},{n:'Equitable Holdings',t:'EQH'},{n:'Assurant',t:'AIZ'},{n:'U-Haul',t:'UHAL'},
 {n:'Sun Communities',t:'SUI'},{n:'Healthpeak Properties',t:'DOC'},{n:'Globe Life',t:'GL'},{n:'DigitalOcean Holdings',t:'DOCN'},{n:'Solventum',t:'SOLV'},{n:'Allegion',t:'ALLE'},{n:'The Cooper Companies',t:'COO'},{n:'Wayfair A',t:'W'},{n:'Dynatrace',t:'DT'},{n:'CNA Financial',t:'CNA'},
 {n:'Unum',t:'UNM'},{n:'Penske Automotive Group',t:'PAG'},{n:'TTM Technologies',t:'TTMI'},{n:'Toll Brothers',t:'TOL'},{n:'Fidelity National Financial',t:'FNF'},{n:'Regency Centers',t:'REG'},{n:'Ares Capital',t:'ARCC'},{n:'McCormick & Company',t:'MKC'},{n:'Invesco',t:'IVZ'},{n:'Baxter International',t:'BAX'},
@@ -3858,7 +3858,10 @@ function krsearchRender(query){
 
   var qLower = q.toLowerCase();
   var results = list.filter(function(s){
-    return s.n.toLowerCase().indexOf(qLower) !== -1 || s.t.toLowerCase().indexOf(qLower) !== -1;
+    // n: 종목명, t: 티커, k: 한글 별칭(미국 주식을 한글로도 찾을 수 있게 하는 선택 필드)
+    return s.n.toLowerCase().indexOf(qLower) !== -1
+      || s.t.toLowerCase().indexOf(qLower) !== -1
+      || (s.k && s.k.indexOf(q) !== -1);
   }).slice(0, 8);
 
   var body = results.length
