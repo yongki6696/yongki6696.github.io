@@ -1556,66 +1556,51 @@ function makeOversoldMarkers(data, displayLen){
     marks+='<path d="M'+(x-3.5).toFixed(1)+','+base.toFixed(1)+' L'+(x+3.5).toFixed(1)+','+base.toFixed(1)+' L'+x.toFixed(1)+','+(base-5).toFixed(1)+' Z" fill="#4ade80" stroke="#000" stroke-width="0.6"/>';
     marks+='<text x="'+x.toFixed(1)+'" y="'+(base-7).toFixed(1)+'" font-size="6.5" fill="#4ade80" text-anchor="middle" font-weight="700">매수</text>';
   });
-  // ── 매도 신호 ──
-  // RSI 70을 단순히 넘었을 때가 아니라, 과열이 꺾여 70 아래로 "내려온 시점"에 신호를 냄
-  // (상승 추세를 끝까지 타고 나올 수 있도록). 여기에 하락 다이버전스나 60일선 이탈이
-  // 동반되면 신뢰도가 높다고 보고 '강한매도'로 구분 표시.
-  function maAt(i, p){
-    if(i-p+1 < 0) return null;
-    var sum=0, cnt=0;
-    for(var j=i-p+1;j<=i;j++){ if(data[j]!=null){ sum+=data[j]; cnt++; } }
-    return cnt===p ? sum/cnt : null;
-  }
-  // 과매수 구간의 가격 최고점과 그 구간의 RSI 최고치를 구함
-  function zonePeak(z){
-    var pv=-Infinity, maxRsi=-Infinity;
-    for(var i=z.start;i<=z.end;i++){
-      if(data[i]!=null && data[i]>pv) pv=data[i];
-      var r=rsiSeries[i-OFFSET];
-      if(r!=null && r>maxRsi) maxRsi=r;
-    }
-    return {price:pv, rsi:maxRsi};
-  }
-  // 하락 다이버전스: 직전 과매수 구간보다 가격 고점은 높아졌는데 RSI 고점은 뚜렷하게 약해진 경우
-  // (= 더 높이 올라갔지만 올리는 힘은 빠졌다는 뜻)
-  // RSI는 비율이 아니라 절대 차이 5포인트 이상을 요구함. 100 vs 97.5처럼 둘 다 극과열인
-  // 미세한 차이를 다이버전스로 잘못 판정하는 것을 막기 위함.
-  function isBearDiv(prevZone, curZone){
-    if(!prevZone) return false;
-    var p=zonePeak(prevZone), c=zonePeak(curZone);
-    if(!isFinite(p.price)||!isFinite(c.price)||!isFinite(p.rsi)||!isFinite(c.rsi)) return false;
-    return c.price > p.price*1.002 && c.rsi <= p.rsi - 5;
-  }
 
-  // ── 부분매도 신호: 아래 세 조건을 모두 충족할 때만 1개 표시 ──
-  //   ① RSI 70 이상 과열 구간이 있었고
-  //   ② 그 과열이 직전 과열보다 힘이 빠짐(하락 다이버전스: 가격 고점↑ 인데 RSI 고점은 5p 이상↓)
-  //   ③ 이후 20일 이동평균선을 아래로 뚫고 내려옴
-  // 마커는 마지막 확인 조건인 '20일선 하방 돌파' 시점에 찍음
-  // (60·30일선은 신호가 늦어 고점 대비 많이 내려온 뒤에야 잡히므로 20일선으로 더 앞당김)
-  var obZones = buildZones(function(v){ return v>=70; });
-  obZones.forEach(function(z, zi){
-    var sellIdx = z.end + 1; // 과열이 식어 RSI가 70 아래로 내려온 첫 지점
-    if(sellIdx >= data.length) return; // 아직 과매수가 진행 중이면 신호 없음
-    if(!isBearDiv(zi>0 ? obZones[zi-1] : null, z)) return; // 하락 다이버전스 없으면 신호 없음
+  // ── 부분매도 신호: 직전 고점 대비 -5% 하락 시점 ──
+  // 예전에는 다이버전스+이평선 이탈로 간접 판단해서 신호 시점이 -4%가 될지 -10%가 될지
+  // 들쭉날쭉했음. 이제는 고점 대비 하락률을 직접 기준으로 삼아 항상 -5% 지점에서 잡음.
+  //   ① 최근 40일 최고가를 새로 쓴 '의미 있는 고점'일 것 (하락 중 잔고점에 반응하지 않도록)
+  //   ② 그 고점이 직전 40일 저점 대비 10% 이상 올라온 것일 것 (±몇% 잔파동 횡보 제외)
+  //   ③ 그 고점 시점의 RSI가 65 이상일 것 (과열 뒤 꺾이는 경우만)
+  //   ④ 종가가 그 고점 대비 5% 이상 하락하면 신호, 같은 고점당 1회만
+  var PEAK_LOOKBACK = 40;   // 고점 인정에 필요한 신고가 기간
+  var PEAK_RSI_MIN  = 65;   // 고점 시점 과열 기준
+  var RALLY_MIN     = 0.10; // 고점이 직전 저점 대비 최소 상승폭
+  var DROP_PCT      = 0.05; // 고점 대비 하락률
 
-    // 다음 과매수 구간이 시작되기 전까지만 20일선 이탈을 탐색 (구간당 최대 1회)
-    var limit = (zi+1 < obZones.length) ? obZones[zi+1].start : data.length;
-    for(var i=sellIdx+1; i<limit && i<data.length; i++){
-      var maNow=maAt(i,20), maPrev=maAt(i-1,20);
-      if(maNow==null||maPrev==null||data[i]==null||data[i-1]==null) continue;
-      if(data[i-1] >= maPrev && data[i] < maNow){ // 위에 있다가 아래로 뚫고 내려온 순간
-        var rel = i - dataStartIdx;
-        if(rel>=0 && rel<displayLen){
-          var x=tx(rel), y=ty(data[i]);
-          var base=Math.min(H-14, y+4);
-          marks+='<path d="M'+(x-3.5).toFixed(1)+','+base.toFixed(1)+' L'+(x+3.5).toFixed(1)+','+base.toFixed(1)+' L'+x.toFixed(1)+','+(base+5).toFixed(1)+' Z" fill="#ef4444" stroke="#000" stroke-width="0.6"/>';
-          marks+='<text x="'+x.toFixed(1)+'" y="'+(base+12).toFixed(1)+'" font-size="6" fill="#ef4444" text-anchor="middle" font-weight="700">부분매도</text>';
-        }
-        break;
+  var armed=false, peakPrice=-Infinity, peakIdx=-1;
+  for(var i=OFFSET; i<data.length; i++){
+    var p=data[i];
+    if(p==null) continue;
+    // 신고가 갱신 여부 확인
+    if(p > peakPrice){
+      var from=Math.max(0,i-PEAK_LOOKBACK), isHigh=true, lookLow=Infinity;
+      for(var j=from; j<i; j++){
+        if(data[j]==null) continue;
+        if(data[j] > p){ isHigh=false; break; }
+        if(data[j] < lookLow) lookLow=data[j];
+      }
+      if(isHigh){
+        peakPrice=p; peakIdx=i;
+        var rsiHere=rsiSeries[i-OFFSET];
+        var rallyOk = isFinite(lookLow) && lookLow>0 && (p/lookLow - 1) >= RALLY_MIN;
+        armed = rallyOk && (rsiHere!=null && rsiHere>=PEAK_RSI_MIN);
       }
     }
-  });
+    // 고점 대비 -5% 이탈 시 신호
+    if(armed && peakIdx>=0 && p <= peakPrice*(1-DROP_PCT)){
+      var rel=i-dataStartIdx;
+      if(rel>=0 && rel<displayLen){
+        var x=tx(rel), y=ty(p);
+        var base=Math.min(H-14, y+4);
+        marks+='<path d="M'+(x-3.5).toFixed(1)+','+base.toFixed(1)+' L'+(x+3.5).toFixed(1)+','+base.toFixed(1)+' L'+x.toFixed(1)+','+(base+5).toFixed(1)+' Z" fill="#ef4444" stroke="#000" stroke-width="0.6"/>';
+        marks+='<text x="'+x.toFixed(1)+'" y="'+(base+12).toFixed(1)+'" font-size="6" fill="#ef4444" text-anchor="middle" font-weight="700">부분매도</text>';
+      }
+      // 신호 후에는 새로운 고점이 만들어질 때까지 다시 신호 내지 않음
+      armed=false; peakPrice=-Infinity; peakIdx=-1;
+    }
+  }
 
   if(!marks) return '';
   return '<svg class="oversold-markers" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none">'+marks+'</svg>';
