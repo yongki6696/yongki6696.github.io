@@ -1564,12 +1564,17 @@ function makeOversoldMarkers(data, displayLen){
   //   ② 그 고점이 직전 40일 저점 대비 10% 이상 올라온 것일 것 (±몇% 잔파동 횡보 제외)
   //   ③ 그 고점 시점의 RSI가 65 이상일 것 (과열 뒤 꺾이는 경우만)
   //   ④ 종가가 그 고점 대비 5% 이상 하락하면 신호, 같은 고점당 1회만
+  //   ⑤ 직전 신호로부터 최소 60거래일이 지났을 것
+  //      (상승 추세에서는 '신고가 → 5% 조정'이 계속 반복되어 신호가 남발되는데,
+  //       신고가 판정 기간을 늘려도 상승 중엔 어차피 매번 신고가라 소용이 없음.
+  //       실제로 효과가 있는 건 신호 간 최소 간격을 두는 쿨다운이었음)
   var PEAK_LOOKBACK = 40;   // 고점 인정에 필요한 신고가 기간
   var PEAK_RSI_MIN  = 65;   // 고점 시점 과열 기준
   var RALLY_MIN     = 0.10; // 고점이 직전 저점 대비 최소 상승폭
   var DROP_PCT      = 0.05; // 고점 대비 하락률
+  var COOLDOWN      = 60;   // 신호 간 최소 거래일 간격
 
-  var armed=false, peakPrice=-Infinity, peakIdx=-1;
+  var armed=false, peakPrice=-Infinity, peakIdx=-1, lastSignalIdx=-Infinity;
   for(var i=OFFSET; i<data.length; i++){
     var p=data[i];
     if(p==null) continue;
@@ -1589,7 +1594,7 @@ function makeOversoldMarkers(data, displayLen){
       }
     }
     // 고점 대비 -5% 이탈 시 신호
-    if(armed && peakIdx>=0 && p <= peakPrice*(1-DROP_PCT)){
+    if(armed && peakIdx>=0 && p <= peakPrice*(1-DROP_PCT) && (i-lastSignalIdx) >= COOLDOWN){
       var rel=i-dataStartIdx;
       if(rel>=0 && rel<displayLen){
         var x=tx(rel), y=ty(p);
@@ -1597,7 +1602,8 @@ function makeOversoldMarkers(data, displayLen){
         marks+='<path d="M'+(x-3.5).toFixed(1)+','+base.toFixed(1)+' L'+(x+3.5).toFixed(1)+','+base.toFixed(1)+' L'+x.toFixed(1)+','+(base+5).toFixed(1)+' Z" fill="#ef4444" stroke="#000" stroke-width="0.6"/>';
         marks+='<text x="'+x.toFixed(1)+'" y="'+(base+12).toFixed(1)+'" font-size="6" fill="#ef4444" text-anchor="middle" font-weight="700">부분매도</text>';
       }
-      // 신호 후에는 새로운 고점이 만들어질 때까지 다시 신호 내지 않음
+      // 신호 후에는 새로운 고점이 만들어질 때까지, 그리고 쿨다운이 지날 때까지 다시 신호 내지 않음
+      lastSignalIdx=i;
       armed=false; peakPrice=-Infinity; peakIdx=-1;
     }
   }
