@@ -1587,21 +1587,22 @@ function makeOversoldMarkers(data, displayLen){
     return c.price > p.price*1.002 && c.rsi <= p.rsi - 5;
   }
 
-  // ── 매도 신호: 아래 세 조건을 모두 충족할 때만 1개 표시 ──
+  // ── 부분매도 신호: 아래 세 조건을 모두 충족할 때만 1개 표시 ──
   //   ① RSI 70 이상 과열 구간이 있었고
   //   ② 그 과열이 직전 과열보다 힘이 빠짐(하락 다이버전스: 가격 고점↑ 인데 RSI 고점은 5p 이상↓)
-  //   ③ 이후 60일 이동평균선을 아래로 뚫고 내려옴
-  // 마커는 마지막 확인 조건인 '60일선 하방 돌파' 시점에 찍음
+  //   ③ 이후 30일 이동평균선을 아래로 뚫고 내려옴
+  // 마커는 마지막 확인 조건인 '30일선 하방 돌파' 시점에 찍음
+  // (60일선은 신호가 너무 늦게 떠서 고점 대비 많이 내려온 뒤에야 잡히므로 30일선으로 앞당김)
   var obZones = buildZones(function(v){ return v>=70; });
   obZones.forEach(function(z, zi){
     var sellIdx = z.end + 1; // 과열이 식어 RSI가 70 아래로 내려온 첫 지점
     if(sellIdx >= data.length) return; // 아직 과매수가 진행 중이면 신호 없음
     if(!isBearDiv(zi>0 ? obZones[zi-1] : null, z)) return; // 하락 다이버전스 없으면 신호 없음
 
-    // 다음 과매수 구간이 시작되기 전까지만 60일선 이탈을 탐색 (구간당 최대 1회)
+    // 다음 과매수 구간이 시작되기 전까지만 30일선 이탈을 탐색 (구간당 최대 1회)
     var limit = (zi+1 < obZones.length) ? obZones[zi+1].start : data.length;
     for(var i=sellIdx+1; i<limit && i<data.length; i++){
-      var maNow=maAt(i,60), maPrev=maAt(i-1,60);
+      var maNow=maAt(i,30), maPrev=maAt(i-1,30);
       if(maNow==null||maPrev==null||data[i]==null||data[i-1]==null) continue;
       if(data[i-1] >= maPrev && data[i] < maNow){ // 위에 있다가 아래로 뚫고 내려온 순간
         var rel = i - dataStartIdx;
@@ -1609,7 +1610,7 @@ function makeOversoldMarkers(data, displayLen){
           var x=tx(rel), y=ty(data[i]);
           var base=Math.min(H-14, y+4);
           marks+='<path d="M'+(x-3.5).toFixed(1)+','+base.toFixed(1)+' L'+(x+3.5).toFixed(1)+','+base.toFixed(1)+' L'+x.toFixed(1)+','+(base+5).toFixed(1)+' Z" fill="#ef4444" stroke="#000" stroke-width="0.6"/>';
-          marks+='<text x="'+x.toFixed(1)+'" y="'+(base+12).toFixed(1)+'" font-size="6.5" fill="#ef4444" text-anchor="middle" font-weight="700">매도</text>';
+          marks+='<text x="'+x.toFixed(1)+'" y="'+(base+12).toFixed(1)+'" font-size="6" fill="#ef4444" text-anchor="middle" font-weight="700">부분매도</text>';
         }
         break;
       }
@@ -1657,7 +1658,7 @@ function renderCard(s){
     legendHTML='<div class="chart-legend"><span><span class="legend-line" style="background:'+chartColor+'"></span>종가</span>'
       +(s.chartData.length>=120?'<span><span class="legend-dash"></span>MA120</span>':'')
       +'<span><span style="color:#4ade80;font-weight:800;margin-right:3px">▲</span>매수(RSI≤30)</span>'
-      +'<span><span style="color:#ef4444;font-weight:800;margin-right:3px">▼</span>매도</span></div>';
+      +'<span><span style="color:#ef4444;font-weight:800;margin-right:3px">▼</span>부분매도</span></div>';
   }
   // 다이버전스는 한 번만 계산해서 배지와 차트 마커 둘 다에 재사용 (중복 계산 방지)
   var divResult = (s.chartData && s.chartData.length>=30) ? detectDivergence(s.chartData, s.timestamps) : null;
