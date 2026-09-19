@@ -1587,40 +1587,29 @@ function makeOversoldMarkers(data, displayLen){
     return c.price > p.price*1.002 && c.rsi <= p.rsi - 5;
   }
 
+  // ── 매도 신호: 아래 세 조건을 모두 충족할 때만 1개 표시 ──
+  //   ① RSI 70 이상 과열 구간이 있었고
+  //   ② 그 과열이 직전 과열보다 힘이 빠짐(하락 다이버전스: 가격 고점↑ 인데 RSI 고점은 5p 이상↓)
+  //   ③ 이후 60일 이동평균선을 아래로 뚫고 내려옴
+  // 마커는 마지막 확인 조건인 '60일선 하방 돌파' 시점에 찍음
   var obZones = buildZones(function(v){ return v>=70; });
   obZones.forEach(function(z, zi){
     var sellIdx = z.end + 1; // 과열이 식어 RSI가 70 아래로 내려온 첫 지점
-    if(sellIdx >= data.length) return; // 아직 과매수가 진행 중이면 신호를 내지 않음
+    if(sellIdx >= data.length) return; // 아직 과매수가 진행 중이면 신호 없음
+    if(!isBearDiv(zi>0 ? obZones[zi-1] : null, z)) return; // 하락 다이버전스 없으면 신호 없음
 
-    // ① RSI 과열 해소 시점의 매도 신호 (하락 다이버전스 동반 시 '강한매도')
-    var strong = isBearDiv(zi>0 ? obZones[zi-1] : null, z);
-    var rel = sellIdx - dataStartIdx;
-    if(rel>=0 && rel<displayLen){
-      var color = strong ? '#ef4444' : '#fb923c';
-      var label = strong ? '강한매도' : '매도';
-      var x=tx(rel), y=ty(data[sellIdx]);
-      var base=Math.min(H-14, y+4);
-      marks+='<path d="M'+(x-3.5).toFixed(1)+','+base.toFixed(1)+' L'+(x+3.5).toFixed(1)+','+base.toFixed(1)+' L'+x.toFixed(1)+','+(base+5).toFixed(1)+' Z" fill="'+color+'" stroke="#000" stroke-width="0.6"/>';
-      if(strong){ // 강한매도는 삼각형을 두 겹으로 겹쳐 한눈에 구분되게
-        marks+='<path d="M'+(x-2.6).toFixed(1)+','+(base+5).toFixed(1)+' L'+(x+2.6).toFixed(1)+','+(base+5).toFixed(1)+' L'+x.toFixed(1)+','+(base+9).toFixed(1)+' Z" fill="'+color+'" stroke="#000" stroke-width="0.5"/>';
-      }
-      marks+='<text x="'+x.toFixed(1)+'" y="'+(base+(strong?16:12)).toFixed(1)+'" font-size="6.5" fill="'+color+'" text-anchor="middle" font-weight="700">'+label+'</text>';
-    }
-
-    // ② 60일선 하향 이탈은 보통 RSI 신호보다 늦게 나오므로, 실제 이탈이 발생한 시점에 따로 표시
-    //    (같은 과매수 구간당 1번만, 다음 과매수 구간이 시작되기 전까지만 탐색)
+    // 다음 과매수 구간이 시작되기 전까지만 60일선 이탈을 탐색 (구간당 최대 1회)
     var limit = (zi+1 < obZones.length) ? obZones[zi+1].start : data.length;
     for(var i=sellIdx+1; i<limit && i<data.length; i++){
       var maNow=maAt(i,60), maPrev=maAt(i-1,60);
       if(maNow==null||maPrev==null||data[i]==null||data[i-1]==null) continue;
       if(data[i-1] >= maPrev && data[i] < maNow){ // 위에 있다가 아래로 뚫고 내려온 순간
-        var rel2 = i - dataStartIdx;
-        if(rel2>=0 && rel2<displayLen){
-          var x2=tx(rel2), y2=ty(data[i]);
-          var base2=Math.min(H-14, y2+4);
-          marks+='<path d="M'+(x2-3.5).toFixed(1)+','+base2.toFixed(1)+' L'+(x2+3.5).toFixed(1)+','+base2.toFixed(1)+' L'+x2.toFixed(1)+','+(base2+5).toFixed(1)+' Z" fill="#ef4444" stroke="#000" stroke-width="0.6"/>';
-          marks+='<path d="M'+(x2-2.6).toFixed(1)+','+(base2+5).toFixed(1)+' L'+(x2+2.6).toFixed(1)+','+(base2+5).toFixed(1)+' L'+x2.toFixed(1)+','+(base2+9).toFixed(1)+' Z" fill="#ef4444" stroke="#000" stroke-width="0.5"/>';
-          marks+='<text x="'+x2.toFixed(1)+'" y="'+(base2+16).toFixed(1)+'" font-size="6.5" fill="#ef4444" text-anchor="middle" font-weight="700">60선이탈</text>';
+        var rel = i - dataStartIdx;
+        if(rel>=0 && rel<displayLen){
+          var x=tx(rel), y=ty(data[i]);
+          var base=Math.min(H-14, y+4);
+          marks+='<path d="M'+(x-3.5).toFixed(1)+','+base.toFixed(1)+' L'+(x+3.5).toFixed(1)+','+base.toFixed(1)+' L'+x.toFixed(1)+','+(base+5).toFixed(1)+' Z" fill="#ef4444" stroke="#000" stroke-width="0.6"/>';
+          marks+='<text x="'+x.toFixed(1)+'" y="'+(base+12).toFixed(1)+'" font-size="6.5" fill="#ef4444" text-anchor="middle" font-weight="700">매도</text>';
         }
         break;
       }
@@ -1668,8 +1657,7 @@ function renderCard(s){
     legendHTML='<div class="chart-legend"><span><span class="legend-line" style="background:'+chartColor+'"></span>종가</span>'
       +(s.chartData.length>=120?'<span><span class="legend-dash"></span>MA120</span>':'')
       +'<span><span style="color:#4ade80;font-weight:800;margin-right:3px">▲</span>매수(RSI≤30)</span>'
-      +'<span><span style="color:#fb923c;font-weight:800;margin-right:3px">▼</span>매도</span>'
-      +'<span><span style="color:#ef4444;font-weight:800;margin-right:3px">▼</span>강한매도·60선이탈</span></div>';
+      +'<span><span style="color:#ef4444;font-weight:800;margin-right:3px">▼</span>매도</span></div>';
   }
   // 다이버전스는 한 번만 계산해서 배지와 차트 마커 둘 다에 재사용 (중복 계산 방지)
   var divResult = (s.chartData && s.chartData.length>=30) ? detectDivergence(s.chartData, s.timestamps) : null;
