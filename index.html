@@ -584,7 +584,7 @@ body.edit-mode .edit-hint { display:block; }
 <div class="bt-overlay hidden" id="bt-overlay">
   <div class="bt-panel">
     <div class="bt-head">
-      <span class="bt-title">🧪 부분매도 기준 찾기</span>
+      <span class="bt-title">🧪 고점주의 신호 기준 찾기</span>
       <button class="bt-close" id="bt-close">✕</button>
     </div>
     <div class="bt-body">
@@ -607,11 +607,11 @@ body.edit-mode .edit-hint { display:block; }
       <div class="bt-adv-toggle" id="bt-adv-toggle">⚙️ 직접 설정해서 돌려보기</div>
       <div class="bt-adv hidden" id="bt-adv">
         <div class="bt-grid">
-          <label>신고가 기간(일)<input type="number" id="bt-lookback" value="40" min="5" max="250"></label>
-          <label>고점 RSI 최소<input type="number" id="bt-rsi" value="65" min="0" max="100"></label>
-          <label>최소 상승폭(%)<input type="number" id="bt-rally" value="10" min="0" max="100"></label>
-          <label>하락률(%)<input type="number" id="bt-drop" value="5" min="1" max="50"></label>
-          <label>쿨다운(일)<input type="number" id="bt-cooldown" value="60" min="0" max="250"></label>
+          <label>고점 판정폭(일)<input type="number" id="bt-pivot" value="4" min="2" max="15"></label>
+          <label>RSI 약화폭<input type="number" id="bt-rsidrop" value="8" min="1" max="40"></label>
+          <label>고점 RSI 최소<input type="number" id="bt-rsi" value="60" min="0" max="100"></label>
+          <label>최소 상승폭(%)<input type="number" id="bt-rally" value="12" min="0" max="100"></label>
+          <label>쿨다운(일)<input type="number" id="bt-cooldown" value="40" min="0" max="250"></label>
           <label>평가기간(일)<input type="number" id="bt-horizon" value="20" min="1" max="120"></label>
         </div>
         <button class="bt-run bt-run-sub" id="bt-run">이 설정으로 실행</button>
@@ -1634,13 +1634,16 @@ function makeOversoldMarkers(data, displayLen){
 
   // ── 부분매도 신호 ──
   // 판정 로직은 detectSellSignals()에 분리되어 있음 (백테스트와 완전히 동일한 코드를 사용)
+  // 고점주의: 하락 다이버전스가 확인된 '가격 고점' 자리에 표시.
+  // 고점 위쪽에 아래를 향한 ▼로 찍어 해당 봉을 정확히 가리키게 한다.
   detectSellSignals(data, rsiSeries, OFFSET, SELL_PARAMS).forEach(function(sig){
     var rel=sig.idx-dataStartIdx;
     if(rel<0||rel>=displayLen) return;
     var x=tx(rel), y=ty(data[sig.idx]);
-    var base=Math.min(H-14, y+4);
-    marks+='<path d="M'+(x-3.5).toFixed(1)+','+base.toFixed(1)+' L'+(x+3.5).toFixed(1)+','+base.toFixed(1)+' L'+x.toFixed(1)+','+(base+5).toFixed(1)+' Z" fill="#ef4444" stroke="#000" stroke-width="0.6"/>';
-    marks+='<text x="'+x.toFixed(1)+'" y="'+(base+12).toFixed(1)+'" font-size="6" fill="#ef4444" text-anchor="middle" font-weight="700">부분매도</text>';
+    var tip=Math.max(9, y-3);           // 삼각형 꼭짓점이 고점 바로 위를 가리킴
+    var top=tip-5;
+    marks+='<path d="M'+(x-3.5).toFixed(1)+','+top.toFixed(1)+' L'+(x+3.5).toFixed(1)+','+top.toFixed(1)+' L'+x.toFixed(1)+','+tip.toFixed(1)+' Z" fill="#ef4444" stroke="#000" stroke-width="0.6"/>';
+    marks+='<text x="'+x.toFixed(1)+'" y="'+(top-2.5).toFixed(1)+'" font-size="6" fill="#ef4444" text-anchor="middle" font-weight="700">고점주의</text>';
   });
 
   if(!marks) return '';
@@ -1655,11 +1658,11 @@ function makeOversoldMarkers(data, displayLen){
 //   ④ 종가가 그 고점 대비 dropPct 이상 하락하면 신호, 같은 고점당 1회만
 //   ⑤ 직전 신호로부터 cooldown 거래일이 지났을 것 (상승 추세에서의 신호 남발 방지)
 // ══════════════════════════════════════════
-var SELL_PARAMS = { peakLookback:40, peakRsiMin:65, rallyMin:0.10, dropPct:0.05, cooldown:60 };
+var SELL_PARAMS = { pivotWin:4, minGap:10, rsiDrop:8, peakRsiMin:60, rallyMin:0.12, rallyLookback:60, cooldown:40 };
 // 백테스트로 찾은 설정을 적용해두었다면 그것을 사용
 try{
   var _sp=JSON.parse(localStorage.getItem('rst_sell_params')||'null');
-  if(_sp && typeof _sp.dropPct==='number') SELL_PARAMS=_sp;
+  if(_sp && typeof _sp.rsiDrop==='number') SELL_PARAMS=_sp; // 구버전 형식은 무시
 }catch(e){}
 
 // ══════════════════════════════════════════
@@ -1727,22 +1730,24 @@ function btEvaluate(cache, opt, horizon){
       }
       rows.push({
         name:s.name,
-        drop: sig.dropFromPeak,                        // 신호 시점 고점대비
-        maxDown: (lo/sig.price - 1)*100,               // 신호 후 최대 추가하락 (클수록 좋음)
-        maxUp:   (hi/sig.price - 1)*100,               // 신호 후 최대 반등
+        maxDown: (lo/sig.price - 1)*100,               // 신호 후 최대 하락 (깊을수록 좋음)
+        maxUp:   (hi/sig.price - 1)*100,               // 신호 후 최대 상승 (작을수록 고점을 잘 맞힌 것)
         fwd:     (s.closes[end]/sig.price - 1)*100     // 신호 후 종료시점 수익률
       });
     });
   });
   if(!rows.length) return null;
-  var REBUY = -3; // 3% 이상 더 싸지면 '재매수 기회 있었음'
-  var chance = rows.filter(function(r){ return r.maxDown <= REBUY; }).length;
+  // 고점주의 신호의 목적은 '여기가 근처 꼭대기였다'를 맞히는 것.
+  // 신호 뒤에 크게 더 오르지 않았고(고점이 맞았고), 실제로 눌림이 나왔으면 성공으로 본다.
+  var MISS_UP = 3;   // 신호 후 3% 넘게 더 오르면 고점 판단이 빗나간 것
+  var WIN_DOWN = -3; // 신호 후 3% 이상 눌리면 실익이 있었던 것
+  var good = rows.filter(function(r){ return r.maxUp < MISS_UP && r.maxDown <= WIN_DOWN; }).length;
   function avg(f){ return rows.reduce(function(s,r){ return s+f(r); },0)/rows.length; }
   return {
     n: rows.length,
-    chanceRate: chance/rows.length*100,   // 재매수 기회율 (핵심 지표)
+    chanceRate: good/rows.length*100,     // 고점 적중률 (핵심 지표)
     avgMaxDown: avg(function(r){return r.maxDown;}),
-    avgDrop:    avg(function(r){return r.drop;}),
+    avgMaxUp:   avg(function(r){return r.maxUp;}),
     avgFwd:     avg(function(r){return r.fwd;}),
     rows: rows
   };
@@ -1750,10 +1755,12 @@ function btEvaluate(cache, opt, horizon){
 
 function btOptFromInputs(){
   return {
-    peakLookback: parseInt(document.getElementById('bt-lookback').value)||40,
+    pivotWin:     parseInt(document.getElementById('bt-pivot').value)||4,
+    minGap:       10,
+    rsiDrop:      parseFloat(document.getElementById('bt-rsidrop').value)||8,
     peakRsiMin:   parseFloat(document.getElementById('bt-rsi').value)||0,
     rallyMin:    (parseFloat(document.getElementById('bt-rally').value)||0)/100,
-    dropPct:     (parseFloat(document.getElementById('bt-drop').value)||5)/100,
+    rallyLookback:60,
     cooldown:     parseInt(document.getElementById('bt-cooldown').value)||0
   };
 }
@@ -1794,16 +1801,19 @@ function btAuto(){
   btLoadData(scope, range, function(d,t,n){ document.getElementById('bt-progress').textContent='데이터 '+d+'/'+t+' ('+n+')'; })
   .then(function(cache){
     document.getElementById('bt-progress').textContent='조합 분석 중…';
-    var drops=[0.04,0.05,0.06,0.07,0.08,0.10];
-    var cools=[0,20,40,60];
-    var rsis=[55,60,65,70];
-    var looks=[20,40,60];
+    var pivots=[3,4,5,7];
+    var rsiDrops=[5,8,12,16];
+    var rsiMins=[50,55,60,65];
+    var rallies=[0.08,0.12,0.18];
+    var cools=[0,20,40];
     var results=[];
-    drops.forEach(function(dp){ cools.forEach(function(cd){ rsis.forEach(function(rs){ looks.forEach(function(lb){
-      var opt={peakLookback:lb, peakRsiMin:rs, rallyMin:0.10, dropPct:dp, cooldown:cd};
-      var r=btEvaluate(cache, opt, horizon);
-      if(r && r.n>=10) results.push({opt:opt, r:r}); // 표본이 너무 적으면 신뢰할 수 없어 제외
-    });});});});
+    pivots.forEach(function(pw){ rsiDrops.forEach(function(rd){ rsiMins.forEach(function(rm){
+      rallies.forEach(function(ra){ cools.forEach(function(cd){
+        var opt={pivotWin:pw, minGap:10, rsiDrop:rd, peakRsiMin:rm, rallyMin:ra, rallyLookback:60, cooldown:cd};
+        var r=btEvaluate(cache, opt, horizon);
+        if(r && r.n>=10) results.push({opt:opt, r:r}); // 표본이 너무 적으면 신뢰할 수 없어 제외
+      });});
+    });});});
     results.sort(function(a,b){ return b.r.chanceRate - a.r.chanceRate; });
     btBusy(false);
     btRenderAuto(results, cache, horizon);
@@ -1811,7 +1821,7 @@ function btAuto(){
 }
 
 function btOptLabel(o){
-  return '하락 '+(o.dropPct*100).toFixed(0)+'% / 쿨다운 '+o.cooldown+'일 / RSI '+o.peakRsiMin+' / 신고가 '+o.peakLookback+'일';
+  return '고점폭 '+o.pivotWin+'일 / RSI약화 '+o.rsiDrop+'p / RSI최소 '+o.peakRsiMin+' / 상승 '+Math.round(o.rallyMin*100)+'% / 쿨다운 '+o.cooldown+'일';
 }
 
 function btStatsTable(r, cache, horizon){
@@ -1819,8 +1829,8 @@ function btStatsTable(r, cache, horizon){
   return '<table>'
     +'<tr><td>분석 종목</td><td>'+cache.series.length+' / '+cache.total+'개</td></tr>'
     +'<tr><td>총 신호</td><td>'+r.n+'회 (종목당 '+(r.n/Math.max(1,cache.series.length)).toFixed(1)+'회)</td></tr>'
-    +'<tr><td>신호 시점 고점대비</td><td>'+r.avgDrop.toFixed(2)+'%</td></tr>'
-    +'<tr><td><b>재매수 기회율</b></td><td style="color:'+color+'">'+r.chanceRate.toFixed(1)+'%</td></tr>'
+    +'<tr><td><b>고점 적중률</b></td><td style="color:'+color+'">'+r.chanceRate.toFixed(1)+'%</td></tr>'
+    +'<tr><td>신호 후 평균 최대상승</td><td>'+r.avgMaxUp.toFixed(2)+'%</td></tr>'
     +'<tr><td>신호 후 평균 최대하락</td><td>'+r.avgMaxDown.toFixed(2)+'%</td></tr>'
     +'<tr><td>신호 후 '+horizon+'일 평균</td><td>'+r.avgFwd.toFixed(2)+'%</td></tr>'
     +'</table>';
@@ -1828,8 +1838,8 @@ function btStatsTable(r, cache, horizon){
 
 function btFootNote(cache, horizon){
   return '<div style="margin-top:8px;font-size:10px;color:var(--muted);line-height:1.6">'
-    +'※ <b>재매수 기회율</b> = 신호 후 '+horizon+'일 안에 신호가격보다 3% 이상 싸진 적이 있는 비율입니다.<br>'
-    +'부분매도는 팔았다가 더 싸게 다시 담는 게 목적이라 이 지표가 가장 중요합니다.<br>'
+    +'※ <b>고점 적중률</b> = 신호 후 '+horizon+'일 동안 3% 넘게 더 오르지 않았고(고점이 맞았고), 3% 이상 눌린 비율입니다.<br>'
+    +'※ 고점은 원리상 미리 확정할 수 없습니다. 이 신호는 지나고 보면 고점 자리에 찍히지만, 실제로는 고점 뒤 '+'며칠'+'이 지나야 확인됩니다.<br>'
     +'※ 과거 성과가 미래를 보장하지 않습니다.'
     +(cache.failed.length? '<br>※ 데이터 실패: '+cache.failed.join(', '):'')
     +'</div>';
@@ -1850,7 +1860,7 @@ function btRenderAuto(results, cache, horizon){
   }
   var best=results[0];
   var html='<div class="bt-best">'
-    +'<div class="bt-best-title">🏆 추천 설정 (재매수 기회율 '+best.r.chanceRate.toFixed(1)+'%)</div>'
+    +'<div class="bt-best-title">🏆 추천 설정 (고점 적중률 '+best.r.chanceRate.toFixed(1)+'%)</div>'
     +'<div style="font-size:12px;color:var(--text)">'+btOptLabel(best.opt)+'</div>'
     +'<button class="bt-apply" id="bt-apply">이 설정을 앱에 적용하기</button>'
     +'</div>'
@@ -1858,21 +1868,22 @@ function btRenderAuto(results, cache, horizon){
 
   html += '<div class="bt-rank"><b>상위 5개 조합</b><br>';
   results.slice(0,5).forEach(function(x,i){
-    html += (i+1)+'. '+btOptLabel(x.opt)+' → 기회율 '+x.r.chanceRate.toFixed(1)+'%, 신호 '+x.r.n+'회<br>';
+    html += (i+1)+'. '+btOptLabel(x.opt)+' → 적중률 '+x.r.chanceRate.toFixed(1)+'%, 신호 '+x.r.n+'회<br>';
   });
   html += '</div>' + btFootNote(cache, horizon);
   el.innerHTML = html;
 
   var applyBtn=document.getElementById('bt-apply');
   if(applyBtn) applyBtn.addEventListener('click', function(){
-    SELL_PARAMS = { peakLookback:best.opt.peakLookback, peakRsiMin:best.opt.peakRsiMin,
-                    rallyMin:best.opt.rallyMin, dropPct:best.opt.dropPct, cooldown:best.opt.cooldown };
+    SELL_PARAMS = { pivotWin:best.opt.pivotWin, minGap:best.opt.minGap, rsiDrop:best.opt.rsiDrop,
+                    peakRsiMin:best.opt.peakRsiMin, rallyMin:best.opt.rallyMin,
+                    rallyLookback:best.opt.rallyLookback, cooldown:best.opt.cooldown };
     try{ localStorage.setItem('rst_sell_params', JSON.stringify(SELL_PARAMS)); }catch(e){}
     // 입력칸에도 반영해두고 차트를 다시 그림
-    document.getElementById('bt-lookback').value=best.opt.peakLookback;
+    document.getElementById('bt-pivot').value=best.opt.pivotWin;
+    document.getElementById('bt-rsidrop').value=best.opt.rsiDrop;
     document.getElementById('bt-rsi').value=best.opt.peakRsiMin;
     document.getElementById('bt-rally').value=Math.round(best.opt.rallyMin*100);
-    document.getElementById('bt-drop').value=+(best.opt.dropPct*100).toFixed(1);
     document.getElementById('bt-cooldown').value=best.opt.cooldown;
     stocks.forEach(function(s){ renderCard(s); });
     btClose();
@@ -1892,31 +1903,44 @@ function btClose(){
 function detectSellSignals(data, rsiSeries, OFFSET, opt){
   opt = opt || SELL_PARAMS;
   var out=[];
-  if(!data || !rsiSeries) return out;
-  var armed=false, peakPrice=-Infinity, peakIdx=-1, lastSignalIdx=-Infinity;
-  for(var i=OFFSET; i<data.length; i++){
-    var p=data[i];
-    if(p==null) continue;
-    if(p > peakPrice){ // 신고가 갱신 여부 확인
-      var from=Math.max(0,i-opt.peakLookback), isHigh=true, lookLow=Infinity;
-      for(var j=from; j<i; j++){
-        if(data[j]==null) continue;
-        if(data[j] > p){ isHigh=false; break; }
-        if(data[j] < lookLow) lookLow=data[j];
-      }
-      if(isHigh){
-        peakPrice=p; peakIdx=i;
-        var rsiHere=rsiSeries[i-OFFSET];
-        var rallyOk = isFinite(lookLow) && lookLow>0 && (p/lookLow - 1) >= opt.rallyMin;
-        armed = rallyOk && (rsiHere!=null && rsiHere>=opt.peakRsiMin);
-      }
+  if(!data || !rsiSeries || data.length < 40) return out;
+
+  // rsiSeries는 data[OFFSET]부터 시작하므로, 같은 인덱스로 맞춘 배열을 만들어 둔다
+  var rsiAligned = [];
+  for(var i=0;i<data.length;i++) rsiAligned[i] = (i>=OFFSET) ? rsiSeries[i-OFFSET] : null;
+
+  var W = opt.pivotWin;
+  // 가격의 국지적 고점(앞뒤 W일보다 높은 지점)을 찾는다
+  var highs=[];
+  for(var i=W; i<data.length-W; i++){
+    if(data[i]==null) continue;
+    var isTop=true;
+    for(var j=i-W;j<=i+W;j++){
+      if(j===i||data[j]==null) continue;
+      if(data[j] > data[i]){ isTop=false; break; }
     }
-    if(armed && peakIdx>=0 && p <= peakPrice*(1-opt.dropPct) && (i-lastSignalIdx) >= opt.cooldown){
-      out.push({ idx:i, price:p, peakPrice:peakPrice, peakIdx:peakIdx,
-                 dropFromPeak: (p/peakPrice - 1)*100 });
-      lastSignalIdx=i;
-      armed=false; peakPrice=-Infinity; peakIdx=-1;
-    }
+    if(isTop) highs.push(i);
+  }
+
+  var lastSignalIdx=-Infinity;
+  for(var k=1;k<highs.length;k++){
+    var i1=highs[k-1], i2=highs[k];
+    var p1=data[i1], p2=data[i2];
+    var r1=rsiAligned[i1], r2=rsiAligned[i2];
+    if(p1==null||p2==null||r1==null||r2==null) continue;
+    if(i2-i1 < opt.minGap) continue;                 // 두 고점이 너무 붙어 있으면 무의미
+    if(!(p2 > p1*1.002)) continue;                   // 가격은 더 높은 고점을 만들어야 함
+    if(!(r2 <= r1 - opt.rsiDrop)) continue;          // 그런데 RSI는 뚜렷하게 약해져야 함
+    if(!(r2 >= opt.peakRsiMin)) continue;            // 여전히 높은 수준에서 벌어진 일이어야 함
+    // 충분히 오른 뒤의 고점인지 (직전 저점 대비)
+    var lo=Infinity;
+    for(var j=Math.max(0,i2-opt.rallyLookback); j<=i2; j++){ if(data[j]!=null && data[j]<lo) lo=data[j]; }
+    if(!(isFinite(lo) && lo>0 && (p2/lo - 1) >= opt.rallyMin)) continue;
+    if(i2 - lastSignalIdx < opt.cooldown) continue;
+
+    out.push({ idx:i2, price:p2, peakPrice:p2, peakIdx:i2,
+               dropFromPeak:0, prevHighIdx:i1, rsiFrom:r1, rsiTo:r2 });
+    lastSignalIdx=i2;
   }
   return out;
 }
@@ -1958,7 +1982,7 @@ function renderCard(s){
     legendHTML='<div class="chart-legend"><span><span class="legend-line" style="background:'+chartColor+'"></span>종가</span>'
       +(s.chartData.length>=120?'<span><span class="legend-dash"></span>MA120</span>':'')
       +'<span><span style="color:#4ade80;font-weight:800;margin-right:3px">▲</span>매수(RSI≤30)</span>'
-      +'<span><span style="color:#ef4444;font-weight:800;margin-right:3px">▼</span>부분매도</span></div>';
+      +'<span><span style="color:#ef4444;font-weight:800;margin-right:3px">▼</span>고점주의</span></div>';
   }
   // 다이버전스는 한 번만 계산해서 배지와 차트 마커 둘 다에 재사용 (중복 계산 방지)
   var divResult = (s.chartData && s.chartData.length>=30) ? detectDivergence(s.chartData, s.timestamps) : null;
@@ -4433,8 +4457,8 @@ function krsearchClose(){
   });
   // 현재 적용된 기준을 입력칸 기본값으로 반영
   (function(){
-    var m={ 'bt-lookback':SELL_PARAMS.peakLookback, 'bt-rsi':SELL_PARAMS.peakRsiMin,
-            'bt-rally':Math.round(SELL_PARAMS.rallyMin*100), 'bt-drop':+(SELL_PARAMS.dropPct*100).toFixed(1),
+    var m={ 'bt-pivot':SELL_PARAMS.pivotWin, 'bt-rsidrop':SELL_PARAMS.rsiDrop,
+            'bt-rsi':SELL_PARAMS.peakRsiMin, 'bt-rally':Math.round(SELL_PARAMS.rallyMin*100),
             'bt-cooldown':SELL_PARAMS.cooldown };
     Object.keys(m).forEach(function(id){ var e=document.getElementById(id); if(e) e.value=m[id]; });
   })();
