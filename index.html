@@ -612,6 +612,7 @@ body.edit-mode .edit-hint { display:block; }
           <label>고점 RSI 최소<input type="number" id="bt-rsi" value="60" min="0" max="100"></label>
           <label>최소 상승폭(%)<input type="number" id="bt-rally" value="12" min="0" max="100"></label>
           <label>쿨다운(일)<input type="number" id="bt-cooldown" value="40" min="0" max="250"></label>
+          <label>극단이격(%)<input type="number" id="bt-ext" value="25" min="5" max="100"></label>
           <label>평가기간(일)<input type="number" id="bt-horizon" value="20" min="1" max="120"></label>
         </div>
         <button class="bt-run bt-run-sub" id="bt-run">이 설정으로 실행</button>
@@ -1658,11 +1659,12 @@ function makeOversoldMarkers(data, displayLen){
 //   ④ 종가가 그 고점 대비 dropPct 이상 하락하면 신호, 같은 고점당 1회만
 //   ⑤ 직전 신호로부터 cooldown 거래일이 지났을 것 (상승 추세에서의 신호 남발 방지)
 // ══════════════════════════════════════════
-var SELL_PARAMS = { pivotWin:4, minGap:10, rsiDrop:8, peakRsiMin:60, rallyMin:0.12, rallyLookback:60, cooldown:40 };
+var SELL_PARAMS = { pivotWin:4, minGap:10, rsiDrop:8, peakRsiMin:60, rallyMin:0.12, rallyLookback:60, cooldown:40,
+                    maLen:60, extremePct:0.25, extremeRsi:70 };
 // 백테스트로 찾은 설정을 적용해두었다면 그것을 사용
 try{
   var _sp=JSON.parse(localStorage.getItem('rst_sell_params')||'null');
-  if(_sp && typeof _sp.rsiDrop==='number') SELL_PARAMS=_sp; // 구버전 형식은 무시
+  if(_sp && typeof _sp.extremePct==='number') SELL_PARAMS=_sp; // 구버전 형식은 무시
 }catch(e){}
 
 // ══════════════════════════════════════════
@@ -1761,7 +1763,10 @@ function btOptFromInputs(){
     peakRsiMin:   parseFloat(document.getElementById('bt-rsi').value)||0,
     rallyMin:    (parseFloat(document.getElementById('bt-rally').value)||0)/100,
     rallyLookback:60,
-    cooldown:     parseInt(document.getElementById('bt-cooldown').value)||0
+    cooldown:     parseInt(document.getElementById('bt-cooldown').value)||0,
+    maLen:        60,
+    extremePct:  (parseFloat(document.getElementById('bt-ext').value)||25)/100,
+    extremeRsi:   70
   };
 }
 
@@ -1809,9 +1814,12 @@ function btAuto(){
     var results=[];
     pivots.forEach(function(pw){ rsiDrops.forEach(function(rd){ rsiMins.forEach(function(rm){
       rallies.forEach(function(ra){ cools.forEach(function(cd){
-        var opt={pivotWin:pw, minGap:10, rsiDrop:rd, peakRsiMin:rm, rallyMin:ra, rallyLookback:60, cooldown:cd};
-        var r=btEvaluate(cache, opt, horizon);
-        if(r && r.n>=10) results.push({opt:opt, r:r}); // 표본이 너무 적으면 신뢰할 수 없어 제외
+        [0.18,0.25,0.35].forEach(function(ep){
+          var opt={pivotWin:pw, minGap:10, rsiDrop:rd, peakRsiMin:rm, rallyMin:ra, rallyLookback:60,
+                   cooldown:cd, maLen:60, extremePct:ep, extremeRsi:70};
+          var r=btEvaluate(cache, opt, horizon);
+          if(r && r.n>=10) results.push({opt:opt, r:r}); // 표본이 너무 적으면 신뢰할 수 없어 제외
+        });
       });});
     });});});
     results.sort(function(a,b){ return b.r.chanceRate - a.r.chanceRate; });
@@ -1821,7 +1829,7 @@ function btAuto(){
 }
 
 function btOptLabel(o){
-  return '고점폭 '+o.pivotWin+'일 / RSI약화 '+o.rsiDrop+'p / RSI최소 '+o.peakRsiMin+' / 상승 '+Math.round(o.rallyMin*100)+'% / 쿨다운 '+o.cooldown+'일';
+  return '고점폭 '+o.pivotWin+'일 / RSI약화 '+o.rsiDrop+'p / RSI최소 '+o.peakRsiMin+' / 상승 '+Math.round(o.rallyMin*100)+'% / 이격 '+Math.round(o.extremePct*100)+'% / 쿨다운 '+o.cooldown+'일';
 }
 
 function btStatsTable(r, cache, horizon){
@@ -1877,7 +1885,8 @@ function btRenderAuto(results, cache, horizon){
   if(applyBtn) applyBtn.addEventListener('click', function(){
     SELL_PARAMS = { pivotWin:best.opt.pivotWin, minGap:best.opt.minGap, rsiDrop:best.opt.rsiDrop,
                     peakRsiMin:best.opt.peakRsiMin, rallyMin:best.opt.rallyMin,
-                    rallyLookback:best.opt.rallyLookback, cooldown:best.opt.cooldown };
+                    rallyLookback:best.opt.rallyLookback, cooldown:best.opt.cooldown,
+                    maLen:best.opt.maLen, extremePct:best.opt.extremePct, extremeRsi:best.opt.extremeRsi };
     try{ localStorage.setItem('rst_sell_params', JSON.stringify(SELL_PARAMS)); }catch(e){}
     // 입력칸에도 반영해두고 차트를 다시 그림
     document.getElementById('bt-pivot').value=best.opt.pivotWin;
@@ -1885,6 +1894,7 @@ function btRenderAuto(results, cache, horizon){
     document.getElementById('bt-rsi').value=best.opt.peakRsiMin;
     document.getElementById('bt-rally').value=Math.round(best.opt.rallyMin*100);
     document.getElementById('bt-cooldown').value=best.opt.cooldown;
+    document.getElementById('bt-ext').value=Math.round(best.opt.extremePct*100);
     stocks.forEach(function(s){ renderCard(s); });
     btClose();
     toast('✅','설정 적용됨','차트의 부분매도 신호가 새 기준으로 바뀌었어요','ok',3000);
@@ -1922,24 +1932,53 @@ function detectSellSignals(data, rsiSeries, OFFSET, opt){
     if(isTop) highs.push(i);
   }
 
-  var lastSignalIdx=-Infinity;
-  for(var k=1;k<highs.length;k++){
-    var i1=highs[k-1], i2=highs[k];
-    var p1=data[i1], p2=data[i2];
-    var r1=rsiAligned[i1], r2=rsiAligned[i2];
-    if(p1==null||p2==null||r1==null||r2==null) continue;
-    if(i2-i1 < opt.minGap) continue;                 // 두 고점이 너무 붙어 있으면 무의미
-    if(!(p2 > p1*1.002)) continue;                   // 가격은 더 높은 고점을 만들어야 함
-    if(!(r2 <= r1 - opt.rsiDrop)) continue;          // 그런데 RSI는 뚜렷하게 약해져야 함
-    if(!(r2 >= opt.peakRsiMin)) continue;            // 여전히 높은 수준에서 벌어진 일이어야 함
-    // 충분히 오른 뒤의 고점인지 (직전 저점 대비)
+  // 이동평균 (이격도 계산용)
+  function maAt(i, len){
+    if(i-len+1 < 0) return null;
+    var sum=0, cnt=0;
+    for(var j=i-len+1;j<=i;j++){ if(data[j]!=null){ sum+=data[j]; cnt++; } }
+    return cnt===len ? sum/cnt : null;
+  }
+  // 충분히 오른 뒤의 고점인지 (직전 저점 대비)
+  function rallyOk(i){
     var lo=Infinity;
-    for(var j=Math.max(0,i2-opt.rallyLookback); j<=i2; j++){ if(data[j]!=null && data[j]<lo) lo=data[j]; }
-    if(!(isFinite(lo) && lo>0 && (p2/lo - 1) >= opt.rallyMin)) continue;
-    if(i2 - lastSignalIdx < opt.cooldown) continue;
+    for(var j=Math.max(0,i-opt.rallyLookback); j<=i; j++){ if(data[j]!=null && data[j]<lo) lo=data[j]; }
+    return isFinite(lo) && lo>0 && (data[i]/lo - 1) >= opt.rallyMin;
+  }
 
-    out.push({ idx:i2, price:p2, peakPrice:p2, peakIdx:i2,
-               dropFromPeak:0, prevHighIdx:i1, rsiFrom:r1, rsiTo:r2 });
+  var lastSignalIdx=-Infinity;
+  for(var k=0;k<highs.length;k++){
+    var i2=highs[k], p2=data[i2], r2=rsiAligned[i2];
+    if(p2==null||r2==null) continue;
+    if(i2 - lastSignalIdx < opt.cooldown) continue;
+    if(!rallyOk(i2)) continue;
+
+    var kind=null, i1=null, r1=null;
+
+    // (A) 하락 다이버전스형 고점: 직전 고점보다 가격은 높은데 RSI는 약해진 경우
+    //     고점 부근에서 두 번 출렁이는 '둥근 천장'을 잡아냄
+    if(k>=1){
+      i1=highs[k-1]; r1=rsiAligned[i1];
+      var p1=data[i1];
+      if(p1!=null && r1!=null && (i2-i1)>=opt.minGap
+         && p2 > p1*1.002 && r2 <= r1 - opt.rsiDrop && r2 >= opt.peakRsiMin){
+        kind='div';
+      }
+    }
+    // (B) 극단 이격형 고점: 이동평균선보다 비정상적으로 멀리 떨어진 채 과열된 경우
+    //     한 번에 수직으로 쏘고 무너지는 '급등형 천장'은 비교할 두 번째 고점이 없어
+    //     다이버전스로는 잡히지 않으므로 이 조건이 필요함
+    if(!kind){
+      var ma=maAt(i2, opt.maLen);
+      if(ma!=null && ma>0 && (p2/ma - 1) >= opt.extremePct && r2 >= opt.extremeRsi){
+        kind='ext';
+      }
+    }
+    if(!kind) continue;
+
+    out.push({ idx:i2, price:p2, peakPrice:p2, peakIdx:i2, kind:kind,
+               dropFromPeak:0, prevHighIdx:(kind==='div'?i1:null),
+               rsiFrom:(kind==='div'?r1:null), rsiTo:r2 });
     lastSignalIdx=i2;
   }
   return out;
@@ -4459,7 +4498,7 @@ function krsearchClose(){
   (function(){
     var m={ 'bt-pivot':SELL_PARAMS.pivotWin, 'bt-rsidrop':SELL_PARAMS.rsiDrop,
             'bt-rsi':SELL_PARAMS.peakRsiMin, 'bt-rally':Math.round(SELL_PARAMS.rallyMin*100),
-            'bt-cooldown':SELL_PARAMS.cooldown };
+            'bt-cooldown':SELL_PARAMS.cooldown, 'bt-ext':Math.round((SELL_PARAMS.extremePct||0.25)*100) };
     Object.keys(m).forEach(function(id){ var e=document.getElementById(id); if(e) e.value=m[id]; });
   })();
   var btOverlay=document.getElementById('bt-overlay');
