@@ -612,7 +612,7 @@ body.edit-mode .edit-hint { display:block; }
           <label>고점 RSI 최소<input type="number" id="bt-rsi" value="60" min="0" max="100"></label>
           <label>최소 상승폭(%)<input type="number" id="bt-rally" value="12" min="0" max="100"></label>
           <label>쿨다운(일)<input type="number" id="bt-cooldown" value="40" min="0" max="250"></label>
-          <label>극단이격(%)<input type="number" id="bt-ext" value="25" min="5" max="100"></label>
+          <label>이격 상위(%)<input type="number" id="bt-ext" value="10" min="1" max="50"></label>
           <label>신고가 예외(%)<input type="number" id="bt-ovr" value="2" min="0" max="30"></label>
           <label>평가기간(일)<input type="number" id="bt-horizon" value="20" min="1" max="120"></label>
         </div>
@@ -1661,11 +1661,11 @@ function makeOversoldMarkers(data, displayLen){
 //   ⑤ 직전 신호로부터 cooldown 거래일이 지났을 것 (상승 추세에서의 신호 남발 방지)
 // ══════════════════════════════════════════
 var SELL_PARAMS = { pivotWin:4, minGap:10, rsiDrop:8, peakRsiMin:60, rallyMin:0.12, rallyLookback:60, cooldown:40,
-                    maLen:60, extremePct:0.25, extremeRsi:70, newHighOverride:0.02 };
+                    maLen:60, extremePctile:10, extremeFloor:0.04, extremeRsi:70, newHighOverride:0.02 };
 // 백테스트로 찾은 설정을 적용해두었다면 그것을 사용
 try{
   var _sp=JSON.parse(localStorage.getItem('rst_sell_params')||'null');
-  if(_sp && typeof _sp.newHighOverride==='number') SELL_PARAMS=_sp; // 구버전 형식은 무시
+  if(_sp && typeof _sp.extremePctile==='number') SELL_PARAMS=_sp; // 구버전 형식은 무시
 }catch(e){}
 
 // ══════════════════════════════════════════
@@ -1766,7 +1766,8 @@ function btOptFromInputs(){
     rallyLookback:60,
     cooldown:     parseInt(document.getElementById('bt-cooldown').value)||0,
     maLen:        60,
-    extremePct:  (parseFloat(document.getElementById('bt-ext').value)||25)/100,
+    extremePctile: parseFloat(document.getElementById('bt-ext').value)||10,
+    extremeFloor:  0.04,
     extremeRsi:   70,
     newHighOverride: (parseFloat(document.getElementById('bt-ovr').value)||0)/100
   };
@@ -1816,9 +1817,9 @@ function btAuto(){
     var results=[];
     pivots.forEach(function(pw){ rsiDrops.forEach(function(rd){ rsiMins.forEach(function(rm){
       rallies.forEach(function(ra){ cools.forEach(function(cd){
-        [0.18,0.25,0.35].forEach(function(ep){
+        [5,10,15,20].forEach(function(ep){
           var opt={pivotWin:pw, minGap:10, rsiDrop:rd, peakRsiMin:rm, rallyMin:ra, rallyLookback:60,
-                   cooldown:cd, maLen:60, extremePct:ep, extremeRsi:70, newHighOverride:0.02};
+                   cooldown:cd, maLen:60, extremePctile:ep, extremeFloor:0.04, extremeRsi:70, newHighOverride:0.02};
           var r=btEvaluate(cache, opt, horizon);
           if(r && r.n>=10) results.push({opt:opt, r:r}); // 표본이 너무 적으면 신뢰할 수 없어 제외
         });
@@ -1831,7 +1832,7 @@ function btAuto(){
 }
 
 function btOptLabel(o){
-  return '고점폭 '+o.pivotWin+'일 / RSI약화 '+o.rsiDrop+'p / RSI최소 '+o.peakRsiMin+' / 상승 '+Math.round(o.rallyMin*100)+'% / 이격 '+Math.round(o.extremePct*100)+'% / 쿨다운 '+o.cooldown+'일';
+  return '고점폭 '+o.pivotWin+'일 / RSI약화 '+o.rsiDrop+'p / RSI최소 '+o.peakRsiMin+' / 상승 '+Math.round(o.rallyMin*100)+'% / 이격상위 '+o.extremePctile+'% / 쿨다운 '+o.cooldown+'일';
 }
 
 function btStatsTable(r, cache, horizon){
@@ -1888,7 +1889,8 @@ function btRenderAuto(results, cache, horizon){
     SELL_PARAMS = { pivotWin:best.opt.pivotWin, minGap:best.opt.minGap, rsiDrop:best.opt.rsiDrop,
                     peakRsiMin:best.opt.peakRsiMin, rallyMin:best.opt.rallyMin,
                     rallyLookback:best.opt.rallyLookback, cooldown:best.opt.cooldown,
-                    maLen:best.opt.maLen, extremePct:best.opt.extremePct, extremeRsi:best.opt.extremeRsi,
+                    maLen:best.opt.maLen, extremePctile:best.opt.extremePctile, extremeFloor:best.opt.extremeFloor,
+                    extremeRsi:best.opt.extremeRsi,
                     newHighOverride:best.opt.newHighOverride };
     try{ localStorage.setItem('rst_sell_params', JSON.stringify(SELL_PARAMS)); }catch(e){}
     // 입력칸에도 반영해두고 차트를 다시 그림
@@ -1897,7 +1899,7 @@ function btRenderAuto(results, cache, horizon){
     document.getElementById('bt-rsi').value=best.opt.peakRsiMin;
     document.getElementById('bt-rally').value=Math.round(best.opt.rallyMin*100);
     document.getElementById('bt-cooldown').value=best.opt.cooldown;
-    document.getElementById('bt-ext').value=Math.round(best.opt.extremePct*100);
+    document.getElementById('bt-ext').value=best.opt.extremePctile;
     document.getElementById('bt-ovr').value=Math.round((best.opt.newHighOverride||0)*100);
     stocks.forEach(function(s){ renderCard(s); });
     btClose();
@@ -1943,6 +1945,25 @@ function detectSellSignals(data, rsiSeries, OFFSET, opt){
     for(var j=i-len+1;j<=i;j++){ if(data[j]!=null){ sum+=data[j]; cnt++; } }
     return cnt===len ? sum/cnt : null;
   }
+  // 이격도 = (종가 / 이동평균 - 1)
+  function gapAt(i){
+    var ma=maAt(i, opt.maLen);
+    return (ma!=null && ma>0) ? (data[i]/ma - 1) : null;
+  }
+  // 그 종목의 과거 이격도 분포에서 상위 pctile%에 해당하는 값을 구함
+  function gapThreshold(i, pctile){
+    var hist=[];
+    for(var j=Math.max(0,i-250); j<=i; j++){
+      var g=gapAt(j);
+      if(g!=null) hist.push(g);
+    }
+    if(hist.length < 40) return null; // 표본이 적으면 판단 보류
+    hist.sort(function(a,b){ return a-b; });
+    var pos=Math.floor(hist.length*(1 - pctile/100));
+    if(pos>=hist.length) pos=hist.length-1;
+    if(pos<0) pos=0;
+    return hist[pos];
+  }
   // 충분히 오른 뒤의 고점인지 (직전 저점 대비)
   function rallyOk(i){
     var lo=Infinity;
@@ -1974,13 +1995,16 @@ function detectSellSignals(data, rsiSeries, OFFSET, opt){
         kind='div';
       }
     }
-    // (B) 극단 이격형 고점: 이동평균선보다 비정상적으로 멀리 떨어진 채 과열된 경우
+    // (B) 극단 이격형 고점: 이동평균선에서 비정상적으로 멀어진 채 과열된 경우
     //     한 번에 수직으로 쏘고 무너지는 '급등형 천장'은 비교할 두 번째 고점이 없어
-    //     다이버전스로는 잡히지 않으므로 이 조건이 필요함
+    //     다이버전스로는 잡히지 않으므로 이 조건이 필요함.
+    //     기준을 고정 %로 두면 저변동 대형주(예: 버크셔)는 영원히 도달하지 못하므로,
+    //     '그 종목 자신의 과거 이격도 분포에서 상위 N%'인지로 판단한다.
     if(!kind){
-      var ma=maAt(i2, opt.maLen);
-      if(ma!=null && ma>0 && (p2/ma - 1) >= opt.extremePct && r2 >= opt.extremeRsi){
-        kind='ext';
+      var gapNow=gapAt(i2);
+      if(gapNow!=null && gapNow >= opt.extremeFloor && r2 >= opt.extremeRsi){
+        var thr=gapThreshold(i2, opt.extremePctile);
+        if(thr!=null && gapNow >= thr) kind='ext';
       }
     }
     if(!kind) continue;
@@ -4507,7 +4531,7 @@ function krsearchClose(){
   (function(){
     var m={ 'bt-pivot':SELL_PARAMS.pivotWin, 'bt-rsidrop':SELL_PARAMS.rsiDrop,
             'bt-rsi':SELL_PARAMS.peakRsiMin, 'bt-rally':Math.round(SELL_PARAMS.rallyMin*100),
-            'bt-cooldown':SELL_PARAMS.cooldown, 'bt-ext':Math.round((SELL_PARAMS.extremePct||0.25)*100),
+            'bt-cooldown':SELL_PARAMS.cooldown, 'bt-ext':(SELL_PARAMS.extremePctile||10),
             'bt-ovr':Math.round((SELL_PARAMS.newHighOverride||0)*100) };
     Object.keys(m).forEach(function(id){ var e=document.getElementById(id); if(e) e.value=m[id]; });
   })();
