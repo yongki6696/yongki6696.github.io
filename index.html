@@ -255,6 +255,14 @@ body.edit-mode .card { cursor:default; }
 }
 .bt-run { width:100%; background:var(--accent); border:none; color:#fff; font-weight:700; font-size:14px; padding:11px; border-radius:10px; cursor:pointer; font-family:inherit; }
 .bt-run:disabled { opacity:.5; }
+.bt-run-sub { background:#2a2a2a; font-size:13px; margin-top:8px; }
+.bt-hint { font-size:10px; color:var(--muted); text-align:center; margin-top:6px; }
+.bt-adv-toggle { margin-top:14px; font-size:11px; color:var(--accent2); cursor:pointer; text-align:center; padding:6px; }
+.bt-adv { margin-top:8px; padding-top:10px; border-top:1px solid var(--border); }
+.bt-best { background:rgba(34,197,94,.10); border:1px solid rgba(34,197,94,.3); border-radius:10px; padding:10px 12px; margin-bottom:10px; }
+.bt-best-title { font-size:12px; font-weight:700; color:#22c55e; margin-bottom:6px; }
+.bt-apply { width:100%; background:#22c55e; border:none; color:#062; font-weight:700; font-size:13px; padding:9px; border-radius:9px; cursor:pointer; margin-top:8px; font-family:inherit; }
+.bt-rank { font-size:10px; color:var(--muted); margin-top:8px; line-height:1.7; }
 .bt-progress { margin-top:12px; font-size:12px; color:var(--accent2); }
 .bt-result { margin-top:12px; font-size:12px; color:var(--text2); line-height:1.7; }
 .bt-result table { width:100%; border-collapse:collapse; font-size:11px; margin-top:8px; }
@@ -576,21 +584,13 @@ body.edit-mode .edit-hint { display:block; }
 <div class="bt-overlay hidden" id="bt-overlay">
   <div class="bt-panel">
     <div class="bt-head">
-      <span class="bt-title">🧪 부분매도 신호 백테스트</span>
+      <span class="bt-title">🧪 부분매도 기준 찾기</span>
       <button class="bt-close" id="bt-close">✕</button>
     </div>
     <div class="bt-body">
-      <div class="bt-grid">
-        <label>신고가 기간(일)<input type="number" id="bt-lookback" value="40" min="5" max="250"></label>
-        <label>고점 RSI 최소<input type="number" id="bt-rsi" value="65" min="0" max="100"></label>
-        <label>최소 상승폭(%)<input type="number" id="bt-rally" value="10" min="0" max="100"></label>
-        <label>하락률(%)<input type="number" id="bt-drop" value="5" min="1" max="50"></label>
-        <label>쿨다운(일)<input type="number" id="bt-cooldown" value="60" min="0" max="250"></label>
-        <label>평가기간(일)<input type="number" id="bt-horizon" value="20" min="1" max="120"></label>
-      </div>
       <div class="bt-grid2">
         <label>대상<select id="bt-scope">
-          <option value="all">한국+미국 시총 30</option>
+          <option value="all" selected>한국+미국 시총 30</option>
           <option value="kr">한국 시총 15</option>
           <option value="us">미국 시총 15</option>
           <option value="watch">내 감시 목록</option>
@@ -601,7 +601,22 @@ body.edit-mode .edit-hint { display:block; }
           <option value="5y">5년</option>
         </select></label>
       </div>
-      <button class="bt-run" id="bt-run">백테스트 실행</button>
+      <button class="bt-run" id="bt-auto">🔍 자동으로 최적 기준 찾기</button>
+      <div class="bt-hint">여러 설정을 한 번에 돌려서 가장 성적 좋은 조합을 찾아줍니다</div>
+
+      <div class="bt-adv-toggle" id="bt-adv-toggle">⚙️ 직접 설정해서 돌려보기</div>
+      <div class="bt-adv hidden" id="bt-adv">
+        <div class="bt-grid">
+          <label>신고가 기간(일)<input type="number" id="bt-lookback" value="40" min="5" max="250"></label>
+          <label>고점 RSI 최소<input type="number" id="bt-rsi" value="65" min="0" max="100"></label>
+          <label>최소 상승폭(%)<input type="number" id="bt-rally" value="10" min="0" max="100"></label>
+          <label>하락률(%)<input type="number" id="bt-drop" value="5" min="1" max="50"></label>
+          <label>쿨다운(일)<input type="number" id="bt-cooldown" value="60" min="0" max="250"></label>
+          <label>평가기간(일)<input type="number" id="bt-horizon" value="20" min="1" max="120"></label>
+        </div>
+        <button class="bt-run bt-run-sub" id="bt-run">이 설정으로 실행</button>
+      </div>
+
       <div class="bt-progress hidden" id="bt-progress"></div>
       <div class="bt-result" id="bt-result"></div>
     </div>
@@ -1641,6 +1656,11 @@ function makeOversoldMarkers(data, displayLen){
 //   ⑤ 직전 신호로부터 cooldown 거래일이 지났을 것 (상승 추세에서의 신호 남발 방지)
 // ══════════════════════════════════════════
 var SELL_PARAMS = { peakLookback:40, peakRsiMin:65, rallyMin:0.10, dropPct:0.05, cooldown:60 };
+// 백테스트로 찾은 설정을 적용해두었다면 그것을 사용
+try{
+  var _sp=JSON.parse(localStorage.getItem('rst_sell_params')||'null');
+  if(_sp && typeof _sp.dropPct==='number') SELL_PARAMS=_sp;
+}catch(e){}
 
 // ══════════════════════════════════════════
 // 백테스트 (숨김 기능)
@@ -1666,99 +1686,198 @@ function btGetTargets(scope){
   return TICKER_POOL.slice(0,15).concat(TICKER_POOL.slice(30,45));
 }
 
-function btRun(){
-  if(btRunning) return;
-  var opt = {
+// 종목 데이터를 한 번만 받아두고, 여러 설정을 이 데이터로 반복 평가한다
+var btCache = { key:null, series:[], failed:[] };
+
+function btLoadData(scope, range, onProgress){
+  var key = scope+'|'+range;
+  if(btCache.key === key) return Promise.resolve(btCache);
+  var targets = btGetTargets(scope);
+  var series=[], failed=[], done=0, idx=0;
+  function step(){
+    if(idx>=targets.length) return Promise.resolve();
+    var item=targets[idx++];
+    return btFetchCloses(item.t, range).then(function(closes){
+      if(closes.length < 80){ failed.push(item.n); return; }
+      series.push({ name:item.n, closes:closes, rsi:calcRSISeries(closes) });
+    }).catch(function(){ failed.push(item.n); })
+      .then(function(){ done++; if(onProgress) onProgress(done, targets.length, item.n); return step(); });
+  }
+  var runners=[]; for(var k=0;k<Math.min(3,targets.length);k++) runners.push(step());
+  return Promise.all(runners).then(function(){
+    btCache = { key:key, series:series, failed:failed, total:targets.length };
+    return btCache;
+  });
+}
+
+// ── 평가 ──
+// 부분매도의 목적은 "일부 팔았다가 더 싸게 다시 담는 것"이므로,
+// 단순히 N일 뒤 주가가 아니라 그 사이에 실제로 더 싸게 살 기회가 있었는지로 채점한다.
+// (강세장에서는 어떤 매도 신호든 'N일 뒤 주가'로 보면 무조건 나쁘게 나오기 때문)
+function btEvaluate(cache, opt, horizon){
+  var rows=[];
+  cache.series.forEach(function(s){
+    detectSellSignals(s.closes, s.rsi, 15, opt).forEach(function(sig){
+      var end = Math.min(sig.idx+horizon, s.closes.length-1);
+      if(end <= sig.idx) return;
+      var lo=Infinity, hi=-Infinity;
+      for(var i=sig.idx+1;i<=end;i++){
+        if(s.closes[i]<lo) lo=s.closes[i];
+        if(s.closes[i]>hi) hi=s.closes[i];
+      }
+      rows.push({
+        name:s.name,
+        drop: sig.dropFromPeak,                        // 신호 시점 고점대비
+        maxDown: (lo/sig.price - 1)*100,               // 신호 후 최대 추가하락 (클수록 좋음)
+        maxUp:   (hi/sig.price - 1)*100,               // 신호 후 최대 반등
+        fwd:     (s.closes[end]/sig.price - 1)*100     // 신호 후 종료시점 수익률
+      });
+    });
+  });
+  if(!rows.length) return null;
+  var REBUY = -3; // 3% 이상 더 싸지면 '재매수 기회 있었음'
+  var chance = rows.filter(function(r){ return r.maxDown <= REBUY; }).length;
+  function avg(f){ return rows.reduce(function(s,r){ return s+f(r); },0)/rows.length; }
+  return {
+    n: rows.length,
+    chanceRate: chance/rows.length*100,   // 재매수 기회율 (핵심 지표)
+    avgMaxDown: avg(function(r){return r.maxDown;}),
+    avgDrop:    avg(function(r){return r.drop;}),
+    avgFwd:     avg(function(r){return r.fwd;}),
+    rows: rows
+  };
+}
+
+function btOptFromInputs(){
+  return {
     peakLookback: parseInt(document.getElementById('bt-lookback').value)||40,
     peakRsiMin:   parseFloat(document.getElementById('bt-rsi').value)||0,
     rallyMin:    (parseFloat(document.getElementById('bt-rally').value)||0)/100,
     dropPct:     (parseFloat(document.getElementById('bt-drop').value)||5)/100,
     cooldown:     parseInt(document.getElementById('bt-cooldown').value)||0
   };
-  var horizon = parseInt(document.getElementById('bt-horizon').value)||20;
-  var range   = document.getElementById('bt-range').value;
-  var targets = btGetTargets(document.getElementById('bt-scope').value);
-  if(!targets.length){ document.getElementById('bt-result').innerHTML='대상 종목이 없습니다.'; return; }
+}
 
-  btRunning = true;
-  var runBtn=document.getElementById('bt-run'); runBtn.disabled=true;
-  var prog=document.getElementById('bt-progress'); prog.classList.remove('hidden');
+function btBusy(on, msg){
+  btRunning=on;
+  ['bt-run','bt-auto'].forEach(function(id){ var b=document.getElementById(id); if(b) b.disabled=on; });
+  var prog=document.getElementById('bt-progress');
+  if(on){ prog.classList.remove('hidden'); prog.textContent=msg||'처리 중…'; }
+  else prog.classList.add('hidden');
+}
+
+// 직접 설정한 값으로 1회 실행
+function btRun(){
+  if(btRunning) return;
+  var scope=document.getElementById('bt-scope').value;
+  var range=document.getElementById('bt-range').value;
+  var horizon=parseInt(document.getElementById('bt-horizon').value)||20;
+  var opt=btOptFromInputs();
+  btBusy(true,'데이터 준비 중…');
   document.getElementById('bt-result').innerHTML='';
-
-  var all=[], failed=[], done=0;
-  var idx=0, CONC=3;
-
-  function step(){
-    if(idx>=targets.length) return Promise.resolve();
-    var item=targets[idx++];
-    return btFetchCloses(item.t, range).then(function(closes){
-      if(closes.length < opt.peakLookback+30) { failed.push(item.n); return; }
-      var rsi=calcRSISeries(closes);
-      var OFFSET=15;
-      detectSellSignals(closes, rsi, OFFSET, opt).forEach(function(sig){
-        var future = sig.idx+horizon;
-        if(future >= closes.length) return; // 평가기간이 확보되지 않은 신호는 제외
-        all.push({
-          name:item.n,
-          drop: sig.dropFromPeak,                                   // 신호 시점의 고점대비 하락률
-          fwd: (closes[future]/sig.price - 1)*100,                  // 신호 후 horizon일 수익률
-          peakFwd: (closes[future]/sig.peakPrice - 1)*100           // 고점 대비로 본 결과
-        });
-      });
-    }).catch(function(){ failed.push(item.n); })
-      .then(function(){
-        done++;
-        prog.textContent='분석 중… '+done+'/'+targets.length+' ('+item.n+')';
-        return step();
-      });
-  }
-
-  var runners=[]; for(var k=0;k<Math.min(CONC,targets.length);k++) runners.push(step());
-  Promise.all(runners).then(function(){
-    prog.classList.add('hidden');
-    runBtn.disabled=false; btRunning=false;
-    btRender(all, failed, targets.length, horizon, opt);
+  btLoadData(scope, range, function(d,t,n){ document.getElementById('bt-progress').textContent='데이터 '+d+'/'+t+' ('+n+')'; })
+  .then(function(cache){
+    btBusy(false);
+    var r=btEvaluate(cache, opt, horizon);
+    btRenderSingle(r, cache, horizon, opt);
   });
 }
 
-function btRender(all, failed, total, horizon, opt){
+// 여러 조합을 자동으로 돌려 가장 성적 좋은 설정을 찾음
+function btAuto(){
+  if(btRunning) return;
+  var scope=document.getElementById('bt-scope').value;
+  var range=document.getElementById('bt-range').value;
+  var horizon=parseInt(document.getElementById('bt-horizon').value)||20;
+  btBusy(true,'데이터 준비 중…');
+  document.getElementById('bt-result').innerHTML='';
+  btLoadData(scope, range, function(d,t,n){ document.getElementById('bt-progress').textContent='데이터 '+d+'/'+t+' ('+n+')'; })
+  .then(function(cache){
+    document.getElementById('bt-progress').textContent='조합 분석 중…';
+    var drops=[0.04,0.05,0.06,0.07,0.08,0.10];
+    var cools=[0,20,40,60];
+    var rsis=[55,60,65,70];
+    var looks=[20,40,60];
+    var results=[];
+    drops.forEach(function(dp){ cools.forEach(function(cd){ rsis.forEach(function(rs){ looks.forEach(function(lb){
+      var opt={peakLookback:lb, peakRsiMin:rs, rallyMin:0.10, dropPct:dp, cooldown:cd};
+      var r=btEvaluate(cache, opt, horizon);
+      if(r && r.n>=10) results.push({opt:opt, r:r}); // 표본이 너무 적으면 신뢰할 수 없어 제외
+    });});});});
+    results.sort(function(a,b){ return b.r.chanceRate - a.r.chanceRate; });
+    btBusy(false);
+    btRenderAuto(results, cache, horizon);
+  });
+}
+
+function btOptLabel(o){
+  return '하락 '+(o.dropPct*100).toFixed(0)+'% / 쿨다운 '+o.cooldown+'일 / RSI '+o.peakRsiMin+' / 신고가 '+o.peakLookback+'일';
+}
+
+function btStatsTable(r, cache, horizon){
+  var color = r.chanceRate>=70 ? '#22c55e' : r.chanceRate>=55 ? '#f59e0b' : '#ef4444';
+  return '<table>'
+    +'<tr><td>분석 종목</td><td>'+cache.series.length+' / '+cache.total+'개</td></tr>'
+    +'<tr><td>총 신호</td><td>'+r.n+'회 (종목당 '+(r.n/Math.max(1,cache.series.length)).toFixed(1)+'회)</td></tr>'
+    +'<tr><td>신호 시점 고점대비</td><td>'+r.avgDrop.toFixed(2)+'%</td></tr>'
+    +'<tr><td><b>재매수 기회율</b></td><td style="color:'+color+'">'+r.chanceRate.toFixed(1)+'%</td></tr>'
+    +'<tr><td>신호 후 평균 최대하락</td><td>'+r.avgMaxDown.toFixed(2)+'%</td></tr>'
+    +'<tr><td>신호 후 '+horizon+'일 평균</td><td>'+r.avgFwd.toFixed(2)+'%</td></tr>'
+    +'</table>';
+}
+
+function btFootNote(cache, horizon){
+  return '<div style="margin-top:8px;font-size:10px;color:var(--muted);line-height:1.6">'
+    +'※ <b>재매수 기회율</b> = 신호 후 '+horizon+'일 안에 신호가격보다 3% 이상 싸진 적이 있는 비율입니다.<br>'
+    +'부분매도는 팔았다가 더 싸게 다시 담는 게 목적이라 이 지표가 가장 중요합니다.<br>'
+    +'※ 과거 성과가 미래를 보장하지 않습니다.'
+    +(cache.failed.length? '<br>※ 데이터 실패: '+cache.failed.join(', '):'')
+    +'</div>';
+}
+
+function btRenderSingle(r, cache, horizon, opt){
   var el=document.getElementById('bt-result');
-  if(!all.length){
-    el.innerHTML='<b>신호가 한 건도 발생하지 않았습니다.</b><br>조건이 너무 엄격할 수 있습니다. 하락률을 낮추거나 쿨다운/최소 상승폭을 줄여보세요.'
-      + (failed.length? '<br><span style="color:var(--muted)">데이터 실패: '+failed.length+'종목</span>':'');
+  if(!r){ el.innerHTML='<b>신호가 발생하지 않았습니다.</b><br>조건이 너무 엄격합니다. 하락률이나 쿨다운을 낮춰보세요.'; return; }
+  el.innerHTML = '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">'+btOptLabel(opt)+'</div>'
+    + btStatsTable(r, cache, horizon) + btFootNote(cache, horizon);
+}
+
+function btRenderAuto(results, cache, horizon){
+  var el=document.getElementById('bt-result');
+  if(!results.length){
+    el.innerHTML='<b>쓸 만한 조합을 찾지 못했습니다.</b><br>신호가 10회 이상 나오는 설정이 없었습니다. 대상이나 기간을 늘려보세요.';
     return;
   }
-  function avg(a){ return a.reduce(function(s,v){return s+v;},0)/a.length; }
-  var fwds=all.map(function(x){return x.fwd;});
-  var drops=all.map(function(x){return x.drop;});
-  // 신호 후 가격이 더 내려갔으면 '팔길 잘한 신호'로 간주
-  var good=all.filter(function(x){ return x.fwd < 0; }).length;
-  var hit=(good/all.length*100);
-  var avgFwd=avg(fwds), avgDrop=avg(drops);
-  var worst=Math.min.apply(null,fwds), best=Math.max.apply(null,fwds);
+  var best=results[0];
+  var html='<div class="bt-best">'
+    +'<div class="bt-best-title">🏆 추천 설정 (재매수 기회율 '+best.r.chanceRate.toFixed(1)+'%)</div>'
+    +'<div style="font-size:12px;color:var(--text)">'+btOptLabel(best.opt)+'</div>'
+    +'<button class="bt-apply" id="bt-apply">이 설정을 앱에 적용하기</button>'
+    +'</div>'
+    + btStatsTable(best.r, cache, horizon);
 
-  var verdictColor = hit>=60 ? 'rgba(34,197,94,.12)' : hit>=45 ? 'rgba(245,158,11,.12)' : 'rgba(239,68,68,.12)';
-  var verdictText = hit>=60
-    ? '신호 후 실제로 더 하락한 경우가 많습니다. 이 설정은 쓸 만해 보입니다.'
-    : hit>=45
-      ? '맞고 틀린 경우가 비슷합니다. 동전 던지기와 큰 차이가 없어 설정을 바꿔볼 필요가 있습니다.'
-      : '신호 후 오히려 오른 경우가 더 많습니다. 이 설정으로는 너무 일찍 파는 셈입니다.';
+  html += '<div class="bt-rank"><b>상위 5개 조합</b><br>';
+  results.slice(0,5).forEach(function(x,i){
+    html += (i+1)+'. '+btOptLabel(x.opt)+' → 기회율 '+x.r.chanceRate.toFixed(1)+'%, 신호 '+x.r.n+'회<br>';
+  });
+  html += '</div>' + btFootNote(cache, horizon);
+  el.innerHTML = html;
 
-  el.innerHTML =
-    '<table>'
-    +'<tr><td>분석 종목</td><td>'+(total-failed.length)+' / '+total+'개</td></tr>'
-    +'<tr><td>총 신호</td><td>'+all.length+'회 (종목당 평균 '+(all.length/Math.max(1,total-failed.length)).toFixed(1)+'회)</td></tr>'
-    +'<tr><td>신호 시점 고점대비</td><td>'+avgDrop.toFixed(2)+'%</td></tr>'
-    +'<tr><td>적중률(신호 후 더 하락)</td><td style="color:'+(hit>=60?'#22c55e':hit>=45?'#f59e0b':'#ef4444')+'">'+hit.toFixed(1)+'% ('+good+'/'+all.length+')</td></tr>'
-    +'<tr><td>신호 후 '+horizon+'일 평균</td><td style="color:'+(avgFwd<0?'#22c55e':'#ef4444')+'">'+avgFwd.toFixed(2)+'%</td></tr>'
-    +'<tr><td>최악 / 최선</td><td>'+best.toFixed(1)+'% / '+worst.toFixed(1)+'%</td></tr>'
-    +'</table>'
-    +'<div class="bt-verdict" style="background:'+verdictColor+'">'+verdictText+'</div>'
-    +'<div style="margin-top:8px;font-size:10px;color:var(--muted);line-height:1.5">'
-    +'※ "적중"은 신호 후 '+horizon+'일 뒤 주가가 신호 시점보다 낮은 경우를 뜻합니다. 부분매도 관점에서 더 떨어졌다면 팔길 잘한 것입니다.<br>'
-    +'※ 과거 성과가 미래를 보장하지 않습니다.'
-    +(failed.length? '<br>※ 데이터 실패: '+failed.join(', '):'')
-    +'</div>';
+  var applyBtn=document.getElementById('bt-apply');
+  if(applyBtn) applyBtn.addEventListener('click', function(){
+    SELL_PARAMS = { peakLookback:best.opt.peakLookback, peakRsiMin:best.opt.peakRsiMin,
+                    rallyMin:best.opt.rallyMin, dropPct:best.opt.dropPct, cooldown:best.opt.cooldown };
+    try{ localStorage.setItem('rst_sell_params', JSON.stringify(SELL_PARAMS)); }catch(e){}
+    // 입력칸에도 반영해두고 차트를 다시 그림
+    document.getElementById('bt-lookback').value=best.opt.peakLookback;
+    document.getElementById('bt-rsi').value=best.opt.peakRsiMin;
+    document.getElementById('bt-rally').value=Math.round(best.opt.rallyMin*100);
+    document.getElementById('bt-drop').value=+(best.opt.dropPct*100).toFixed(1);
+    document.getElementById('bt-cooldown').value=best.opt.cooldown;
+    stocks.forEach(function(s){ renderCard(s); });
+    btClose();
+    toast('✅','설정 적용됨','차트의 부분매도 신호가 새 기준으로 바뀌었어요','ok',3000);
+  });
 }
 
 function btOpen(){
@@ -4305,6 +4424,20 @@ function krsearchClose(){
   if(btCloseBtn) btCloseBtn.addEventListener('click', btClose);
   var btRunBtn=document.getElementById('bt-run');
   if(btRunBtn) btRunBtn.addEventListener('click', btRun);
+  var btAutoBtn=document.getElementById('bt-auto');
+  if(btAutoBtn) btAutoBtn.addEventListener('click', btAuto);
+  var btAdvToggle=document.getElementById('bt-adv-toggle');
+  if(btAdvToggle) btAdvToggle.addEventListener('click', function(){
+    var adv=document.getElementById('bt-adv');
+    if(adv) adv.classList.toggle('hidden');
+  });
+  // 현재 적용된 기준을 입력칸 기본값으로 반영
+  (function(){
+    var m={ 'bt-lookback':SELL_PARAMS.peakLookback, 'bt-rsi':SELL_PARAMS.peakRsiMin,
+            'bt-rally':Math.round(SELL_PARAMS.rallyMin*100), 'bt-drop':+(SELL_PARAMS.dropPct*100).toFixed(1),
+            'bt-cooldown':SELL_PARAMS.cooldown };
+    Object.keys(m).forEach(function(id){ var e=document.getElementById(id); if(e) e.value=m[id]; });
+  })();
   var btOverlay=document.getElementById('bt-overlay');
   if(btOverlay) btOverlay.addEventListener('click', function(e){ if(e.target===btOverlay) btClose(); });
 })();
