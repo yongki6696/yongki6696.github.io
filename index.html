@@ -613,6 +613,7 @@ body.edit-mode .edit-hint { display:block; }
           <label>최소 상승폭(%)<input type="number" id="bt-rally" value="12" min="0" max="100"></label>
           <label>쿨다운(일)<input type="number" id="bt-cooldown" value="40" min="0" max="250"></label>
           <label>극단이격(%)<input type="number" id="bt-ext" value="25" min="5" max="100"></label>
+          <label>신고가 예외(%)<input type="number" id="bt-ovr" value="2" min="0" max="30"></label>
           <label>평가기간(일)<input type="number" id="bt-horizon" value="20" min="1" max="120"></label>
         </div>
         <button class="bt-run bt-run-sub" id="bt-run">이 설정으로 실행</button>
@@ -1660,11 +1661,11 @@ function makeOversoldMarkers(data, displayLen){
 //   ⑤ 직전 신호로부터 cooldown 거래일이 지났을 것 (상승 추세에서의 신호 남발 방지)
 // ══════════════════════════════════════════
 var SELL_PARAMS = { pivotWin:4, minGap:10, rsiDrop:8, peakRsiMin:60, rallyMin:0.12, rallyLookback:60, cooldown:40,
-                    maLen:60, extremePct:0.25, extremeRsi:70 };
+                    maLen:60, extremePct:0.25, extremeRsi:70, newHighOverride:0.02 };
 // 백테스트로 찾은 설정을 적용해두었다면 그것을 사용
 try{
   var _sp=JSON.parse(localStorage.getItem('rst_sell_params')||'null');
-  if(_sp && typeof _sp.extremePct==='number') SELL_PARAMS=_sp; // 구버전 형식은 무시
+  if(_sp && typeof _sp.newHighOverride==='number') SELL_PARAMS=_sp; // 구버전 형식은 무시
 }catch(e){}
 
 // ══════════════════════════════════════════
@@ -1766,7 +1767,8 @@ function btOptFromInputs(){
     cooldown:     parseInt(document.getElementById('bt-cooldown').value)||0,
     maLen:        60,
     extremePct:  (parseFloat(document.getElementById('bt-ext').value)||25)/100,
-    extremeRsi:   70
+    extremeRsi:   70,
+    newHighOverride: (parseFloat(document.getElementById('bt-ovr').value)||0)/100
   };
 }
 
@@ -1816,7 +1818,7 @@ function btAuto(){
       rallies.forEach(function(ra){ cools.forEach(function(cd){
         [0.18,0.25,0.35].forEach(function(ep){
           var opt={pivotWin:pw, minGap:10, rsiDrop:rd, peakRsiMin:rm, rallyMin:ra, rallyLookback:60,
-                   cooldown:cd, maLen:60, extremePct:ep, extremeRsi:70};
+                   cooldown:cd, maLen:60, extremePct:ep, extremeRsi:70, newHighOverride:0.02};
           var r=btEvaluate(cache, opt, horizon);
           if(r && r.n>=10) results.push({opt:opt, r:r}); // 표본이 너무 적으면 신뢰할 수 없어 제외
         });
@@ -1886,7 +1888,8 @@ function btRenderAuto(results, cache, horizon){
     SELL_PARAMS = { pivotWin:best.opt.pivotWin, minGap:best.opt.minGap, rsiDrop:best.opt.rsiDrop,
                     peakRsiMin:best.opt.peakRsiMin, rallyMin:best.opt.rallyMin,
                     rallyLookback:best.opt.rallyLookback, cooldown:best.opt.cooldown,
-                    maLen:best.opt.maLen, extremePct:best.opt.extremePct, extremeRsi:best.opt.extremeRsi };
+                    maLen:best.opt.maLen, extremePct:best.opt.extremePct, extremeRsi:best.opt.extremeRsi,
+                    newHighOverride:best.opt.newHighOverride };
     try{ localStorage.setItem('rst_sell_params', JSON.stringify(SELL_PARAMS)); }catch(e){}
     // 입력칸에도 반영해두고 차트를 다시 그림
     document.getElementById('bt-pivot').value=best.opt.pivotWin;
@@ -1895,6 +1898,7 @@ function btRenderAuto(results, cache, horizon){
     document.getElementById('bt-rally').value=Math.round(best.opt.rallyMin*100);
     document.getElementById('bt-cooldown').value=best.opt.cooldown;
     document.getElementById('bt-ext').value=Math.round(best.opt.extremePct*100);
+    document.getElementById('bt-ovr').value=Math.round((best.opt.newHighOverride||0)*100);
     stocks.forEach(function(s){ renderCard(s); });
     btClose();
     toast('✅','설정 적용됨','차트의 부분매도 신호가 새 기준으로 바뀌었어요','ok',3000);
@@ -1946,11 +1950,16 @@ function detectSellSignals(data, rsiSeries, OFFSET, opt){
     return isFinite(lo) && lo>0 && (data[i]/lo - 1) >= opt.rallyMin;
   }
 
-  var lastSignalIdx=-Infinity;
+  var lastSignalIdx=-Infinity, lastSignalPrice=-Infinity;
   for(var k=0;k<highs.length;k++){
     var i2=highs[k], p2=data[i2], r2=rsiAligned[i2];
     if(p2==null||r2==null) continue;
-    if(i2 - lastSignalIdx < opt.cooldown) continue;
+    // 쿨다운 중이라도 직전 신호보다 뚜렷하게 더 높은 고점이면 신호를 낸다.
+    // (쿨다운만 걸어두면 신호 직후 이어지는 '진짜 천장'을 놓치기 때문)
+    if(i2 - lastSignalIdx < opt.cooldown){
+      var ovr = opt.newHighOverride || 0;
+      if(!(ovr > 0 && p2 > lastSignalPrice*(1+ovr))) continue;
+    }
     if(!rallyOk(i2)) continue;
 
     var kind=null, i1=null, r1=null;
@@ -1979,7 +1988,7 @@ function detectSellSignals(data, rsiSeries, OFFSET, opt){
     out.push({ idx:i2, price:p2, peakPrice:p2, peakIdx:i2, kind:kind,
                dropFromPeak:0, prevHighIdx:(kind==='div'?i1:null),
                rsiFrom:(kind==='div'?r1:null), rsiTo:r2 });
-    lastSignalIdx=i2;
+    lastSignalIdx=i2; lastSignalPrice=p2;
   }
   return out;
 }
@@ -4498,7 +4507,8 @@ function krsearchClose(){
   (function(){
     var m={ 'bt-pivot':SELL_PARAMS.pivotWin, 'bt-rsidrop':SELL_PARAMS.rsiDrop,
             'bt-rsi':SELL_PARAMS.peakRsiMin, 'bt-rally':Math.round(SELL_PARAMS.rallyMin*100),
-            'bt-cooldown':SELL_PARAMS.cooldown, 'bt-ext':Math.round((SELL_PARAMS.extremePct||0.25)*100) };
+            'bt-cooldown':SELL_PARAMS.cooldown, 'bt-ext':Math.round((SELL_PARAMS.extremePct||0.25)*100),
+            'bt-ovr':Math.round((SELL_PARAMS.newHighOverride||0)*100) };
     Object.keys(m).forEach(function(id){ var e=document.getElementById(id); if(e) e.value=m[id]; });
   })();
   var btOverlay=document.getElementById('bt-overlay');
