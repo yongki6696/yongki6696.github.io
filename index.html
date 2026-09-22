@@ -4158,7 +4158,7 @@ var US_STOCK_DB = [{n:'Apple',t:'AAPL'},{n:'AbbVie',t:'ABBV'},{n:'Airbnb',t:'ABN
 {n:'V.F.',t:'VFC'},{n:'Axos Financial',t:'AX'},{n:'10x Genomics A',t:'TXG'},{n:'Materion',t:'MTRN'},{n:'MarketAxess Holdings',t:'MKTX'},{n:'Selective Insurance Group',t:'SIGI'},{n:'Amneal Pharmaceuticals A',t:'AMRX'},{n:'Casella Waste Systems A',t:'CWST'},{n:'ESAB',t:'ESAB'},{n:'Balchem',t:'BCPC'},
 {n:'Nexstar Media Group',t:'NXST'},{n:'Mirum Pharmaceuticals',t:'MIRM'},{n:'Duolingo A',t:'DUOL'}
 ];
-// ── 코인 시가총액 상위 30 (2026.09.21 기준, 스테이블코인·금연동 토큰 제외) ──
+// ── 코인 시가총액 상위 20 (2026.09.21 기준, 스테이블코인·금연동 토큰 제외) ──
 // 야후 파이낸스는 심볼이 다른 코인과 겹치면 CoinMarketCap 고유번호를 붙여 구분한다.
 // 번호 없이 조회하면 '데이터 없음'이 되거나, 더 나쁘게는 같은 심볼의 엉뚱한 잡코인이 조회됨.
 // (예: ARB-USD = 'ARbit'이라는 다른 코인 / 진짜 Arbitrum은 ARB11841-USD)
@@ -4182,17 +4182,7 @@ var CRYPTO_DB = [
   {n:'Avalanche',t:'AVAX-USD',k:'아발란체'},
   {n:'Litecoin',t:'LTC-USD',k:'라이트코인'},
   {n:'Canton',t:'CC37263-USD',k:'캔톤'},
-  {n:'Sui',t:'SUI20947-USD',k:'수이'},
-  {n:'Gram (구 Toncoin)',t:'TON11419-USD',k:'톤코인 그램'},
-  {n:'Hedera',t:'HBAR-USD',k:'헤데라'},
-  {n:'Shiba Inu',t:'SHIB-USD',k:'시바이누'},
-  {n:'MemeCore',t:'M35491-USD',k:'밈코어'},
-  {n:'Bittensor',t:'TAO22974-USD',k:'비트텐서'},
-  {n:'Cronos',t:'CRO-USD',k:'크로노스'},
-  {n:'OKB',t:'OKB-USD',k:'오케이비'},
-  {n:'Ethena',t:'ENA30171-USD',k:'에테나'},
-  {n:'Aave',t:'AAVE-USD',k:'에이브'},
-  {n:'Ondo',t:'ONDO-USD',k:'온도'}
+  {n:'Sui',t:'SUI20947-USD',k:'수이'}
 ];
 
 function krsearchIsKorean(str){ return /[가-힣]/.test(str); }
