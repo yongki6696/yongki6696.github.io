@@ -921,6 +921,29 @@ function loadStocksFromStorage() {
     localStorage.setItem('rsi_seeded', '1');
   }
 
+  // 예전에 잘못된 티커로 저장된 코인을 올바른 야후 티커로 자동 교정.
+  // (번호 없는 티커는 데이터가 없거나, 같은 심볼의 엉뚱한 잡코인이 조회됐음)
+  var TICKER_FIX = {
+    'UNI-USD':'UNI7083-USD', 'SUI-USD':'SUI20947-USD', 'TAO-USD':'TAO22974-USD',
+    'APT-USD':'APT21794-USD', 'ARB-USD':'ARB11841-USD', 'JUP-USD':'JUP29210-USD',
+    'TON-USD':'TON11419-USD', 'ENA-USD':'ENA30171-USD', 'HYPE-USD':'HYPE32196-USD',
+    'PEPE-USD':'PEPE24478-USD', 'MNT-USD':'MNT27075-USD'
+  };
+  var fixedCount = 0;
+  saved.forEach(function(s){
+    if (TICKER_FIX[s.ticker]) { s.ticker = TICKER_FIX[s.ticker]; fixedCount++; }
+  });
+  // 교정 결과 같은 종목이 두 번 들어간 경우 하나만 남김
+  var seen = {};
+  saved = saved.filter(function(s){
+    var key = s.ticker + '|' + migrateP(s.period);
+    if (seen[key]) return false;
+    seen[key] = true; return true;
+  });
+  if (fixedCount) {
+    try { localStorage.setItem('rsi_stocks', JSON.stringify(saved)); } catch(e){}
+  }
+
   stocks = saved.map(function(s){
     return {ticker:s.ticker, period:migrateP(s.period),
             rsi:null, price:null, prevClose:null,
@@ -4135,7 +4158,42 @@ var US_STOCK_DB = [{n:'Apple',t:'AAPL'},{n:'AbbVie',t:'ABBV'},{n:'Airbnb',t:'ABN
 {n:'V.F.',t:'VFC'},{n:'Axos Financial',t:'AX'},{n:'10x Genomics A',t:'TXG'},{n:'Materion',t:'MTRN'},{n:'MarketAxess Holdings',t:'MKTX'},{n:'Selective Insurance Group',t:'SIGI'},{n:'Amneal Pharmaceuticals A',t:'AMRX'},{n:'Casella Waste Systems A',t:'CWST'},{n:'ESAB',t:'ESAB'},{n:'Balchem',t:'BCPC'},
 {n:'Nexstar Media Group',t:'NXST'},{n:'Mirum Pharmaceuticals',t:'MIRM'},{n:'Duolingo A',t:'DUOL'}
 ];
-var CRYPTO_DB = [{n:'Bitcoin',t:'BTC-USD'},{n:'Ethereum',t:'ETH-USD'},{n:'BNB',t:'BNB-USD'},{n:'XRP',t:'XRP-USD'},{n:'Solana',t:'SOL-USD'},{n:'TRON',t:'TRX-USD'},{n:'Hyperliquid',t:'HYPE32196-USD'},{n:'Dogecoin',t:'DOGE-USD'},{n:'Zcash',t:'ZEC-USD'},{n:'Stellar',t:'XLM-USD'},{n:'Monero',t:'XMR-USD'},{n:'Chainlink',t:'LINK-USD'},{n:'Cardano',t:'ADA-USD'},{n:'Bitcoin Cash',t:'BCH-USD'},{n:'Litecoin',t:'LTC-USD'},{n:'Sui',t:'SUI-USD'},{n:'Hedera',t:'HBAR-USD'},{n:'Avalanche',t:'AVAX-USD'},{n:'Polkadot',t:'DOT-USD'},{n:'Aave',t:'AAVE-USD'},{n:'Uniswap',t:'UNI-USD'},{n:'Bittensor',t:'TAO-USD'},{n:'Ondo',t:'ONDO-USD'},{n:'Render',t:'RENDER-USD'},{n:'Quant',t:'QNT-USD'},{n:'Algorand',t:'ALGO-USD'},{n:'Jupiter',t:'JUP-USD'},{n:'Filecoin',t:'FIL-USD'},{n:'Arbitrum',t:'ARB-USD'},{n:'Aptos',t:'APT-USD'}];
+// ── 코인 시가총액 상위 30 (2026.09.21 기준, 스테이블코인·금연동 토큰 제외) ──
+// 야후 파이낸스는 심볼이 다른 코인과 겹치면 CoinMarketCap 고유번호를 붙여 구분한다.
+// 번호 없이 조회하면 '데이터 없음'이 되거나, 더 나쁘게는 같은 심볼의 엉뚱한 잡코인이 조회됨.
+// (예: ARB-USD = 'ARbit'이라는 다른 코인 / 진짜 Arbitrum은 ARB11841-USD)
+var CRYPTO_DB = [
+  {n:'Bitcoin',t:'BTC-USD',k:'비트코인'},
+  {n:'Ethereum',t:'ETH-USD',k:'이더리움'},
+  {n:'BNB',t:'BNB-USD',k:'바이낸스코인'},
+  {n:'XRP',t:'XRP-USD',k:'리플'},
+  {n:'Solana',t:'SOL-USD',k:'솔라나'},
+  {n:'TRON',t:'TRX-USD',k:'트론'},
+  {n:'Zcash',t:'ZEC-USD',k:'지캐시'},
+  {n:'Hyperliquid',t:'HYPE32196-USD',k:'하이퍼리퀴드'},
+  {n:'Dogecoin',t:'DOGE-USD',k:'도지코인'},
+  {n:'Monero',t:'XMR-USD',k:'모네로'},
+  {n:'Chainlink',t:'LINK-USD',k:'체인링크'},
+  {n:'Cardano',t:'ADA-USD',k:'에이다'},
+  {n:'Stellar',t:'XLM-USD',k:'스텔라루멘'},
+  {n:'Uniswap',t:'UNI7083-USD',k:'유니스왑'},
+  {n:'Bitcoin Cash',t:'BCH-USD',k:'비트코인캐시'},
+  {n:'NEAR Protocol',t:'NEAR-USD',k:'니어프로토콜'},
+  {n:'Avalanche',t:'AVAX-USD',k:'아발란체'},
+  {n:'Litecoin',t:'LTC-USD',k:'라이트코인'},
+  {n:'Canton',t:'CC37263-USD',k:'캔톤'},
+  {n:'Sui',t:'SUI20947-USD',k:'수이'},
+  {n:'Gram (구 Toncoin)',t:'TON11419-USD',k:'톤코인 그램'},
+  {n:'Hedera',t:'HBAR-USD',k:'헤데라'},
+  {n:'Shiba Inu',t:'SHIB-USD',k:'시바이누'},
+  {n:'MemeCore',t:'M35491-USD',k:'밈코어'},
+  {n:'Bittensor',t:'TAO22974-USD',k:'비트텐서'},
+  {n:'Cronos',t:'CRO-USD',k:'크로노스'},
+  {n:'OKB',t:'OKB-USD',k:'오케이비'},
+  {n:'Ethena',t:'ENA30171-USD',k:'에테나'},
+  {n:'Aave',t:'AAVE-USD',k:'에이브'},
+  {n:'Ondo',t:'ONDO-USD',k:'온도'}
+];
 
 function krsearchIsKorean(str){ return /[가-힣]/.test(str); }
 
