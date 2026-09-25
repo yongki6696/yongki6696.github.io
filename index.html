@@ -439,7 +439,16 @@ body.edit-mode .edit-hint { display:block; }
   background:var(--card); border:1px solid var(--border);
   border-radius:16px; padding:18px 20px; margin-top:20px;
 }
-.rootguide h2 { font-size:15px; font-weight:700; margin-bottom:12px; }
+.rootguide h2 {
+  font-size:15px; font-weight:700; margin-bottom:0;
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  cursor:pointer; touch-action:manipulation; -webkit-tap-highlight-color:transparent;
+}
+.rootguide.open h2 { margin-bottom:12px; }
+.guide-chev { font-size:11px; color:var(--muted); flex-shrink:0; transition:transform .2s; }
+.rootguide.open .guide-chev { transform:rotate(180deg); }
+.guide-body { display:none; }
+.rootguide.open .guide-body { display:block; }
 .rootguide-table { width:100%; border-collapse:collapse; font-size:12px; }
 .rootguide-table td { padding:8px 6px; border-bottom:1px solid var(--border); color:var(--text2); }
 .rootguide-table td:first-child { font-weight:700; color:var(--text); white-space:nowrap; }
@@ -4607,6 +4616,31 @@ function krsearchClose(){
   }
   bindRankListTap('rank-list-kr');
   bindRankListTap('rank-list-us');
+
+  // ── 하단 설명 섹션을 접이식으로 변환 ──
+  // 글은 페이지에 그대로 두되(검색엔진·광고 심사에서 내용이 그대로 읽힘)
+  // 기본은 제목만 보이게 접어두고, 제목을 탭하면 펼쳐지게 한다.
+  (function(){
+    var secs = document.querySelectorAll('.rootguide');
+    for (var i=0; i<secs.length; i++){
+      (function(sec, idx){
+        var h2 = sec.querySelector('h2');
+        if(!h2) return;
+        // 제목 뒤의 내용물을 전부 본문 컨테이너로 옮김
+        var body = document.createElement('div');
+        body.className = 'guide-body';
+        var node = h2.nextSibling;
+        while(node){ var next = node.nextSibling; body.appendChild(node); node = next; }
+        sec.appendChild(body);
+        var chev = document.createElement('span');
+        chev.className = 'guide-chev';
+        chev.textContent = '▼';
+        h2.appendChild(chev);
+        if(idx === 0) sec.classList.add('open'); // 첫 섹션(RSI 신호 기준)은 펼친 채로 시작
+        h2.addEventListener('click', function(){ sec.classList.toggle('open'); });
+      })(secs[i], i);
+    }
+  })();
 
   // ── 맨 아래/맨 위 이동 버튼 ──
   // 아래쪽에 있지 않을 때는 ↓(맨 아래), 거의 다 내려왔으면 ↑(맨 위)로 바뀜.
