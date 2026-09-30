@@ -2309,12 +2309,61 @@ function getCardIndex(el){
   return -1;
 }
 
+// ── 드래그 중 화면 가장자리 자동 스크롤 ──
+var dragAutoRaf   = null;   // requestAnimationFrame 핸들
+var dragLastX     = 0;      // 마지막 포인터 위치 (손가락이 멈춰 있어도 계속 스크롤하기 위해 기억)
+var dragLastY     = 0;
+var DRAG_EDGE     = 90;     // 가장자리 감지 영역 (px)
+var DRAG_SPEED_MAX= 22;     // 1프레임 최대 스크롤 px
+
+function dragEdgeSpeed(y){
+  // 상단은 고정 헤더 아래부터, 하단은 화면 맨 밑부터 감지
+  var header = document.querySelector('header');
+  var topLimit = header ? header.getBoundingClientRect().bottom : 0;
+  var vh = window.innerHeight || document.documentElement.clientHeight;
+
+  if (y < topLimit + DRAG_EDGE){
+    var dTop = (topLimit + DRAG_EDGE) - y;            // 가장자리에 가까울수록 큼
+    if (dTop > DRAG_EDGE) dTop = DRAG_EDGE;
+    return -Math.max(4, Math.round(DRAG_SPEED_MAX * (dTop / DRAG_EDGE)));
+  }
+  if (y > vh - DRAG_EDGE){
+    var dBot = y - (vh - DRAG_EDGE);
+    if (dBot > DRAG_EDGE) dBot = DRAG_EDGE;
+    return Math.max(4, Math.round(DRAG_SPEED_MAX * (dBot / DRAG_EDGE)));
+  }
+  return 0;
+}
+
+function dragAutoStep(){
+  dragAutoRaf = null;
+  if(!dragEl || !editMode) return;
+  var sp = dragEdgeSpeed(dragLastY);
+  if (sp !== 0){
+    var before = window.pageYOffset;
+    window.scrollBy(0, sp);
+    // 스크롤로 카드들이 손가락 아래로 흘러가므로 드롭 위치를 다시 계산
+    if (window.pageYOffset !== before) moveDrag(dragLastX, dragLastY);
+  }
+  dragAutoRaf = requestAnimationFrame(dragAutoStep);
+}
+function startDragAutoScroll(){
+  if (dragAutoRaf == null) dragAutoRaf = requestAnimationFrame(dragAutoStep);
+}
+function stopDragAutoScroll(){
+  if (dragAutoRaf != null){ cancelAnimationFrame(dragAutoRaf); dragAutoRaf = null; }
+}
+
 function startDrag(cardEl){
   dragEl=cardEl;
   dragIdx=getCardIndex(cardEl);
   cardEl.classList.add('is-dragging');
+  var r=cardEl.getBoundingClientRect();
+  dragLastX=r.left+r.width/2; dragLastY=r.top+r.height/2;
+  startDragAutoScroll();
 }
 function endDrag(){
+  stopDragAutoScroll();
   if(!dragEl) return;
   dragEl.classList.remove('is-dragging');
   if(overEl) overEl.classList.remove('drag-over');
@@ -2333,6 +2382,7 @@ function endDrag(){
 }
 function moveDrag(clientX,clientY){
   if(!dragEl) return;
+  dragLastX=clientX; dragLastY=clientY;
   var target=document.elementFromPoint(clientX,clientY);
   var targetCard=target?target.closest('.card'):null;
   if(overEl&&overEl!==targetCard) overEl.classList.remove('drag-over');
@@ -2361,7 +2411,12 @@ document.addEventListener('touchmove',function(e){
 },{passive:false});
 
 document.addEventListener('touchend',function(e){
-  if(!dragEl||!editMode) return;
+  if(!dragEl) return;
+  endDrag();
+},{passive:true});
+
+document.addEventListener('touchcancel',function(e){
+  if(!dragEl) return;
   endDrag();
 },{passive:true});
 
@@ -2378,13 +2433,15 @@ document.addEventListener('mousemove',function(e){
   moveDrag(e.clientX,e.clientY);
 });
 document.addEventListener('mouseup',function(){
-  if(!dragEl||!editMode) return;
+  if(!dragEl) return;
   endDrag();
 });
 
 // ── 편집 모드 ──
 function toggleEdit(){
   editMode=!editMode;
+  if(!editMode && dragEl) endDrag();   // 편집 종료 시 드래그/자동스크롤 정리
+  stopDragAutoScroll();
   var btn=document.getElementById('btn-edit');
   btn.textContent=editMode?'완료':'편집';
   if(editMode) btn.classList.add('edit-active');
