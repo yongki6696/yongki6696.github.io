@@ -1180,39 +1180,77 @@ function fetchBinance(ticker, period){
 
 // ── 하이퍼리퀴드 (POST 방식) ──
 var HL_INTERVAL = { '1d':'1d', '1wk':'1w', '1mo':'1M' };
+// 하이퍼리퀴드 캔들 요청 공통부 (coin: 'HYPE', 'kPEPE', 'io:ANTH' 등 하이퍼리퀴드 표기 그대로)
+function hlFetchRows(coin, div, period){
+  var body = JSON.stringify({ type:'candleSnapshot', req:{
+    coin: coin, interval: HL_INTERVAL[period],
+    startTime: Date.now() - 5*365*864e5, endTime: Date.now() } });
+  var url = 'https://api.hyperliquid.xyz/info';
+  function opts(ct){ return { method:'POST', headers:{'Content-Type': ct || 'application/json'}, body: body }; }
+  // ① 직접(JSON) → ② 전용 프록시 → ③ 직접(text/plain: 브라우저 사전검사(preflight)를 피하는 방식)
+  return fetchJSONTimeout(url, opts()).catch(function(){
+    return fetchJSONTimeout(CRYPTO_PROXY+encodeURIComponent(url), opts());
+  }).catch(function(){
+    return fetchJSONTimeout(url, opts('text/plain'));
+  }).then(function(arr){
+    if (!Array.isArray(arr)) throw new Error('응답 오류');
+    if (!arr.length) throw new Error('없는 종목');
+    return arr.map(function(k){ return { t:+k.t, c:parseFloat(k.c)/div }; })
+              .filter(function(r){ return isFinite(r.c); })
+              .sort(function(a,b){ return a.t-b.t; });
+  });
+}
 function fetchHyperliquid(ticker, period){
   var b = cryptoBase(ticker);
   var coin = HL_K_COINS[b] ? ('k'+b) : b;
   var div = HL_K_COINS[b] ? 1000 : 1;
-  var body = JSON.stringify({ type:'candleSnapshot', req:{
-    coin: coin, interval: HL_INTERVAL[period],
-    startTime: Date.now() - 5*365*864e5, endTime: Date.now() } });
-  var opts = function(){ return { method:'POST', headers:{'Content-Type':'application/json'}, body: body }; };
-  var url = 'https://api.hyperliquid.xyz/info';
-  return fetchJSONTimeout(url, opts()).catch(function(){
-    return fetchJSONTimeout(CRYPTO_PROXY+encodeURIComponent(url), opts());
-  }).then(function(arr){
-    if (!Array.isArray(arr)) throw new Error('하이퍼리퀴드 응답 오류');
-    var rows = arr.map(function(k){ return { t:+k.t, c:parseFloat(k.c)/div }; })
-                  .filter(function(r){ return isFinite(r.c); })
-                  .sort(function(a,b){ return a.t-b.t; });
+  return hlFetchRows(coin, div, period).then(function(rows){
     return cryptoToYahooShape(ticker, cryptoCheckFresh(rows, period), 'hyperliquid');
   });
 }
 
-function fetchCrypto(ticker, period){
-  var entry = cryptoDBEntry(ticker);
-  return fetchBinance(ticker, period).catch(function(){
-    return fetchHyperliquid(ticker, period);
-  }).catch(function(){
-    // 야후 티커가 올바른 코인임이 확인된 경우에만 마지막으로 야후 시도 (엉뚱한 잡코인 방지)
-    if (entry && entry.y) return fetchYahoo(ticker, period);
-    throw new Error('코인 데이터를 불러오지 못했어요');
+// 하이퍼리퀴드 HIP-3 시장 (프리IPO·주식 등 외부 배포자 상장): 'io:ANTH' 형식 = 배포자(소문자):종목
+// 상장된 지 얼마 안 돼 데이터가 짧을 수 있음 (RSI는 15개 이상이면 계산됨)
+function isHLTicker(ticker){ return /^[a-z0-9]+:[A-Z0-9]+$/.test(ticker || ''); }
+function fetchHip3(ticker, period){
+  return hlFetchRows(ticker, 1, period).then(function(rows){
+    var shaped = cryptoToYahooShape(ticker, cryptoCheckFresh(rows, period), 'hyperliquid');
+    shaped.chart.result[0].meta.instrumentType = 'EQUITY';
+    return shaped;
+  }).catch(function(e){
+    throw new Error('하이퍼리퀴드: ' + (e && e.message === '없는 종목' ? '없는 종목' : '불러오기 실패'));
   });
 }
 
-// 데이터 받아오는 입구: 코인(-USD)만 코인 전용 경로, 나머지(한국·미국·환율)는 기존 야후 그대로
+// 실패 원인을 짧은 한글로 (카드에 표시해서 어디서 막혔는지 바로 알 수 있게)
+function srcReason(e){
+  var m = (e && e.message) || '';
+  if (e && e.httpStatus === 400) return '미상장';
+  if (/오래된/.test(m)) return '상장폐지';
+  if (/없는 종목|데이터 없음/.test(m)) return '없음';
+  if (/HTTP 4(03|51)/.test(m)) return '접속차단';
+  return '접속실패';
+}
+
+function fetchCrypto(ticker, period){
+  var entry = cryptoDBEntry(ticker);
+  var why = [];
+  return fetchBinance(ticker, period).catch(function(e){
+    why.push('바이낸스 ' + srcReason(e));
+    return fetchHyperliquid(ticker, period);
+  }).catch(function(e){
+    if (why.length < 2) why.push('하이퍼리퀴드 ' + srcReason(e));
+    // 야후 티커가 올바른 코인임이 확인된 경우에만 마지막으로 야후 시도 (엉뚱한 잡코인 방지)
+    if (entry && entry.y) return fetchYahoo(ticker, period).catch(function(){
+      why.push('야후 실패'); throw new Error(why.join(' · '));
+    });
+    throw new Error(why.join(' · '));
+  });
+}
+
+// 데이터 받아오는 입구: 코인(-USD)·하이퍼리퀴드 시장(io:ANTH 등)만 전용 경로, 나머지(한국·미국·환율)는 기존 야후 그대로
 function fetchChartData(ticker, period){
+  if (isHLTicker(ticker)) return fetchHip3(ticker, period);
   return isCryptoTicker(ticker) ? fetchCrypto(ticker, period) : fetchYahoo(ticker, period);
 }
 function calcRSI(closes){
@@ -2415,7 +2453,9 @@ function updateStats(){
 
 // ── 추가/삭제 ──
 function addStock(){
-  var raw=document.getElementById('inp-ticker').value.trim().toUpperCase().replace(/[^A-Z0-9.\-\^=]/g,'');
+  var raw=document.getElementById('inp-ticker').value.trim().toUpperCase().replace(/[^A-Z0-9.\-\^=:]/g,'');
+  // 하이퍼리퀴드 시장(예: io:ANTH)은 배포자 이름이 소문자라서 앞부분만 소문자로 맞춤
+  if (raw.indexOf(':') !== -1) { var _p = raw.split(':'); raw = _p[0].toLowerCase() + ':' + _p.slice(1).join(''); }
   var period=document.getElementById('inp-period').value;
   if(!raw){toast('⚠️','티커 없음','예: AAPL TSLA QLD NVDL','info');return;}
   if(stocks.find(function(s){return s.ticker===raw&&s.period===period;})){
@@ -4532,7 +4572,9 @@ var CRYPTO_DB = [
   {n:'MultiversX',t:'EGLD-USD',k:'멀티버스엑스'},
   {n:'Sonic',t:'S-USD',k:'소닉'},
   {n:'ApeCoin',t:'APE-USD',k:'에이프코인'},
-  {n:'dYdX',t:'DYDX-USD',k:'디와이디엑스'}
+  {n:'dYdX',t:'DYDX-USD',k:'디와이디엑스'},
+  // ── 하이퍼리퀴드 프리IPO (비상장 주식) ── 2026.08.24 EntropyIO 상장 (이전 vntl:ANTHROPIC은 2026.06 종료)
+  {n:'Anthropic (Pre-IPO)',t:'io:ANTH',k:'앤트로픽 엔트로픽 클로드 프리IPO 비상장'}
 ];
 
 function krsearchIsKorean(str){ return /[가-힣]/.test(str); }
@@ -4656,11 +4698,13 @@ function krsearchItemsHTML(list){
     var isKS = s.t.indexOf('.KS') !== -1;
     var isKQ = s.t.indexOf('.KQ') !== -1;
     var isCrypto = s.t.indexOf('-USD') !== -1;
+    var isPreIPO = isHLTicker(s.t);
     var isFx = s.t.indexOf('=X') !== -1;
     var exch, color;
     if (isKS) { exch='코스피'; color='#3b82f6'; }
     else if (isKQ) { exch='코스닥'; color='#22c55e'; }
     else if (isCrypto) { exch='코인'; color='#a78bfa'; }
+    else if (isPreIPO) { exch='프리IPO'; color='#f472b6'; }
     else if (isFx) { exch='환율'; color='#2dd4bf'; }
     else { exch='미국'; color='#f59e0b'; }
     var sel = !!krsearchSelected[s.t];
