@@ -1073,6 +1073,148 @@ function tryNext(orig,proxies,i){
   if(i>=proxies.length) return Promise.reject(new Error('데이터 로드 실패'));
   return fetchOneProxy(proxies[i]).catch(function(){ return tryNext(orig,proxies,i+1); });
 }
+
+// ══════════════════════════════════════════
+// 코인 전용 데이터 (바이낸스 → 하이퍼리퀴드 → 야후)
+// 한국주식·미국주식·환율은 이 경로를 전혀 타지 않고 기존 fetchYahoo 그대로 사용함.
+// 결과는 야후 응답과 똑같은 모양으로 만들어서 loadStock 이후 로직(RSI·차트·고점대비)을 그대로 재사용.
+// ══════════════════════════════════════════
+var CRYPTO_PROXY = 'https://rsingtime-proxy.yongki6696.workers.dev/?url=';
+// 하이퍼리퀴드는 가격이 아주 작은 밈코인을 1000개 단위(k접두사)로 거래함 → 받은 가격을 1000으로 나눠 1개 가격으로 환산
+var HL_K_COINS = { SHIB:1, PEPE:1, BONK:1, FLOKI:1, LUNC:1 };
+
+function isCryptoTicker(ticker){ return /-USD$/i.test(ticker || ''); }
+
+// 'UNI7083-USD' → 'UNI', 'BTC-USD' → 'BTC', '1INCH-USD' → '1INCH'
+// (끝에 붙은 4자리 이상 숫자 = 야후가 붙인 CoinMarketCap 번호라서 떼어냄)
+function cryptoBase(ticker){
+  return String(ticker).toUpperCase().replace(/-USD$/,'').replace(/\d{4,}$/,'');
+}
+function cryptoDBEntry(ticker){
+  for (var i=0;i<CRYPTO_DB.length;i++) if (CRYPTO_DB[i].t === ticker) return CRYPTO_DB[i];
+  return null;
+}
+
+function fetchJSONTimeout(url, opts, ms){
+  opts = opts || {};
+  if (AbortSignal.timeout) opts.signal = AbortSignal.timeout(ms || 6000);
+  opts.cache = 'no-store';
+  return fetch(url, opts).then(function(r){
+    if (!r.ok) { var err = new Error('HTTP '+r.status); err.httpStatus = r.status; throw err; }
+    return r.text();
+  }).then(function(txt){
+    var obj; try { obj = JSON.parse(txt); } catch(e){ throw new Error('파싱 실패'); }
+    if (obj && typeof obj.contents === 'string') { try { obj = JSON.parse(obj.contents); } catch(e){} }
+    return obj;
+  });
+}
+
+// 마지막 캔들이 너무 오래됐으면(상장폐지된 페어 등) 실패로 처리해서 다음 데이터원으로 넘어감
+var CRYPTO_STALE_MS = { '1d': 4*864e5, '1wk': 16*864e5, '1mo': 70*864e5 };
+function cryptoCheckFresh(rows, period){
+  if (!rows.length) throw new Error('데이터 없음');
+  if (Date.now() - rows[rows.length-1].t > CRYPTO_STALE_MS[period]) throw new Error('오래된 데이터');
+  return rows;
+}
+
+// rows: [{t: 캔들 시작시각(ms), c: 종가}] → 야후 차트 응답 모양으로 변환
+function cryptoToYahooShape(ticker, rows, source){
+  var entry = cryptoDBEntry(ticker);
+  var last = rows[rows.length-1].c;
+  return { chart: { result: [{
+    meta: { symbol: ticker, instrumentType: 'CRYPTOCURRENCY',
+            regularMarketPrice: last, longName: entry ? entry.n : cryptoBase(ticker),
+            dataSource: source },
+    timestamp: rows.map(function(r){ return Math.floor(r.t/1000); }),
+    indicators: { quote: [ { close: rows.map(function(r){ return r.c; }) } ] }
+  }] } };
+}
+
+// ── 바이낸스 (공개 시세 전용 주소 사용) ──
+var BINANCE_INTERVAL = { '1d':'1d', '1wk':'1w', '1mo':'1M' };
+function binanceGet(url){
+  // 직접 요청 → 실패 시 전용 프록시 → 그래도 실패 시 공용 프록시 2개 동시 경주
+  // HTTP 400 = 바이낸스에 없는 코인(Invalid symbol) → 프록시로 재시도해도 소용없으니 즉시 하이퍼리퀴드로 넘어감
+  function stopIfInvalid(e){ if (e && e.httpStatus === 400) { e.definitive = true; throw e; } }
+  return fetchJSONTimeout(url).catch(function(e){
+    stopIfInvalid(e);
+    return fetchJSONTimeout(CRYPTO_PROXY+encodeURIComponent(url));
+  }).catch(function(e){
+    if (e && e.definitive) throw e;
+    stopIfInvalid(e);
+    return raceProxies([
+      fetchJSONTimeout('https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(url)),
+      fetchJSONTimeout('https://api.allorigins.win/raw?url='+encodeURIComponent(url))
+    ]);
+  }).then(function(arr){
+    if (!Array.isArray(arr)) throw new Error('바이낸스 응답 오류');  // {code:-1121,msg:'Invalid symbol.'} 등
+    return arr;
+  });
+}
+function fetchBinance(ticker, period){
+  var sym = cryptoBase(ticker) + 'USDT';
+  var iv = BINANCE_INTERVAL[period];
+  var base = 'https://data-api.binance.vision/api/v3/klines?symbol='+sym+'&interval='+iv;
+  var start = Date.now() - 5*365*864e5;   // 주식과 동일하게 최근 5년
+  var reqs;
+  if (period === '1d') {
+    // 일봉 5년 ≈ 1825개인데 바이낸스는 1회 최대 1000개 → 구간을 둘로 나눠 동시에 요청
+    var mid = start + 1000*864e5;
+    reqs = [ binanceGet(base+'&startTime='+start+'&endTime='+(mid-1)+'&limit=1000'),
+             binanceGet(base+'&startTime='+mid+'&limit=1000') ];
+  } else {
+    reqs = [ binanceGet(base+'&startTime='+start+'&limit=1000') ];
+  }
+  return Promise.all(reqs).then(function(parts){
+    var seen = {}, rows = [];
+    parts.forEach(function(arr){
+      arr.forEach(function(k){
+        var t = +k[0], c = parseFloat(k[4]);
+        if (!seen[t] && isFinite(c)) { seen[t] = 1; rows.push({ t:t, c:c }); }
+      });
+    });
+    rows.sort(function(a,b){ return a.t-b.t; });
+    return cryptoToYahooShape(ticker, cryptoCheckFresh(rows, period), 'binance');
+  });
+}
+
+// ── 하이퍼리퀴드 (POST 방식) ──
+var HL_INTERVAL = { '1d':'1d', '1wk':'1w', '1mo':'1M' };
+function fetchHyperliquid(ticker, period){
+  var b = cryptoBase(ticker);
+  var coin = HL_K_COINS[b] ? ('k'+b) : b;
+  var div = HL_K_COINS[b] ? 1000 : 1;
+  var body = JSON.stringify({ type:'candleSnapshot', req:{
+    coin: coin, interval: HL_INTERVAL[period],
+    startTime: Date.now() - 5*365*864e5, endTime: Date.now() } });
+  var opts = function(){ return { method:'POST', headers:{'Content-Type':'application/json'}, body: body }; };
+  var url = 'https://api.hyperliquid.xyz/info';
+  return fetchJSONTimeout(url, opts()).catch(function(){
+    return fetchJSONTimeout(CRYPTO_PROXY+encodeURIComponent(url), opts());
+  }).then(function(arr){
+    if (!Array.isArray(arr)) throw new Error('하이퍼리퀴드 응답 오류');
+    var rows = arr.map(function(k){ return { t:+k.t, c:parseFloat(k.c)/div }; })
+                  .filter(function(r){ return isFinite(r.c); })
+                  .sort(function(a,b){ return a.t-b.t; });
+    return cryptoToYahooShape(ticker, cryptoCheckFresh(rows, period), 'hyperliquid');
+  });
+}
+
+function fetchCrypto(ticker, period){
+  var entry = cryptoDBEntry(ticker);
+  return fetchBinance(ticker, period).catch(function(){
+    return fetchHyperliquid(ticker, period);
+  }).catch(function(){
+    // 야후 티커가 올바른 코인임이 확인된 경우에만 마지막으로 야후 시도 (엉뚱한 잡코인 방지)
+    if (entry && entry.y) return fetchYahoo(ticker, period);
+    throw new Error('코인 데이터를 불러오지 못했어요');
+  });
+}
+
+// 데이터 받아오는 입구: 코인(-USD)만 코인 전용 경로, 나머지(한국·미국·환율)는 기존 야후 그대로
+function fetchChartData(ticker, period){
+  return isCryptoTicker(ticker) ? fetchCrypto(ticker, period) : fetchYahoo(ticker, period);
+}
 function calcRSI(closes){
   var c=closes.filter(function(v){return v!=null&&!isNaN(v);});
   if(c.length<15) return null;
@@ -1241,7 +1383,7 @@ function getDivHTMLFromResult(div){
 
 function loadStock(s){
   s.loading=true; s.error=null; renderCard(s);
-  return fetchYahoo(s.ticker,s.period)
+  return fetchChartData(s.ticker,s.period)
   .then(function(data){
     var chart=data.chart.result[0];
     var meta=chart.meta||{};
@@ -4284,31 +4426,113 @@ var US_STOCK_DB = [{n:'Apple',t:'AAPL',k:'애플'},{n:'AbbVie',t:'ABBV',k:'애�
 {n:'V.F.',t:'VFC'},{n:'Axos Financial',t:'AX'},{n:'10x Genomics A',t:'TXG'},{n:'Materion',t:'MTRN'},{n:'MarketAxess Holdings',t:'MKTX'},{n:'Selective Insurance Group',t:'SIGI'},{n:'Amneal Pharmaceuticals A',t:'AMRX'},{n:'Casella Waste Systems A',t:'CWST'},{n:'ESAB',t:'ESAB'},{n:'Balchem',t:'BCPC'},
 {n:'Nexstar Media Group',t:'NXST'},{n:'Mirum Pharmaceuticals',t:'MIRM'},{n:'Duolingo A',t:'DUOL'}
 ];
-// ── 코인 시가총액 상위 20 (2026.09.21 기준, 스테이블코인·금연동 토큰 제외) ──
-// 야후 파이낸스는 심볼이 다른 코인과 겹치면 CoinMarketCap 고유번호를 붙여 구분한다.
-// 번호 없이 조회하면 '데이터 없음'이 되거나, 더 나쁘게는 같은 심볼의 엉뚱한 잡코인이 조회됨.
-// (예: ARB-USD = 'ARbit'이라는 다른 코인 / 진짜 Arbitrum은 ARB11841-USD)
+// ── 코인 시가총액 상위 100 (2026.10.05 기준, 스테이블코인·래핑/스테이킹 토큰·거래소 자체코인 제외) ──
+// 코인 데이터는 바이낸스 → 하이퍼리퀴드 → 야후 순서로 받아온다 (fetchCrypto 참고).
+// 티커(t)는 기존 사용자 관심목록과 호환되도록 야후 형식(XXX-USD)을 유지하고,
+// 바이낸스/하이퍼리퀴드 조회 시에는 끝의 CoinMarketCap 번호를 떼고 심볼만 사용함.
+// y:1 = 야후 티커가 올바른 코인임이 확인된 것 → 바이낸스·하이퍼리퀴드 모두 실패할 때만 야후로 재시도
+//        (확인 안 된 코인은 야후로 조회하면 같은 심볼의 엉뚱한 잡코인이 나올 수 있어서 시도 안 함)
 var CRYPTO_DB = [
-  {n:'Bitcoin',t:'BTC-USD',k:'비트코인'},
-  {n:'Ethereum',t:'ETH-USD',k:'이더리움'},
-  {n:'BNB',t:'BNB-USD',k:'바이낸스코인'},
-  {n:'XRP',t:'XRP-USD',k:'리플'},
-  {n:'Solana',t:'SOL-USD',k:'솔라나'},
-  {n:'TRON',t:'TRX-USD',k:'트론'},
-  {n:'Zcash',t:'ZEC-USD',k:'지캐시'},
-  {n:'Hyperliquid',t:'HYPE32196-USD',k:'하이퍼리퀴드'},
-  {n:'Dogecoin',t:'DOGE-USD',k:'도지코인'},
-  {n:'Monero',t:'XMR-USD',k:'모네로'},
-  {n:'Chainlink',t:'LINK-USD',k:'체인링크'},
-  {n:'Cardano',t:'ADA-USD',k:'에이다'},
-  {n:'Stellar',t:'XLM-USD',k:'스텔라루멘'},
-  {n:'Uniswap',t:'UNI7083-USD',k:'유니스왑'},
-  {n:'Bitcoin Cash',t:'BCH-USD',k:'비트코인캐시'},
-  {n:'NEAR Protocol',t:'NEAR-USD',k:'니어프로토콜'},
-  {n:'Avalanche',t:'AVAX-USD',k:'아발란체'},
-  {n:'Litecoin',t:'LTC-USD',k:'라이트코인'},
-  {n:'Canton',t:'CC37263-USD',k:'캔톤'},
-  {n:'Sui',t:'SUI20947-USD',k:'수이'}
+  {n:'Bitcoin',t:'BTC-USD',k:'비트코인',y:1},
+  {n:'Ethereum',t:'ETH-USD',k:'이더리움',y:1},
+  {n:'BNB',t:'BNB-USD',k:'바이낸스코인',y:1},
+  {n:'XRP',t:'XRP-USD',k:'리플',y:1},
+  {n:'Solana',t:'SOL-USD',k:'솔라나',y:1},
+  {n:'TRON',t:'TRX-USD',k:'트론',y:1},
+  {n:'Zcash',t:'ZEC-USD',k:'지캐시',y:1},
+  {n:'Hyperliquid',t:'HYPE32196-USD',k:'하이퍼리퀴드',y:1},
+  {n:'Dogecoin',t:'DOGE-USD',k:'도지코인',y:1},
+  {n:'Chainlink',t:'LINK-USD',k:'체인링크',y:1},
+  {n:'Monero',t:'XMR-USD',k:'모네로',y:1},
+  {n:'Cardano',t:'ADA-USD',k:'에이다',y:1},
+  {n:'Stellar',t:'XLM-USD',k:'스텔라루멘',y:1},
+  {n:'Bitcoin Cash',t:'BCH-USD',k:'비트코인캐시',y:1},
+  {n:'NEAR Protocol',t:'NEAR-USD',k:'니어프로토콜',y:1},
+  {n:'Uniswap',t:'UNI7083-USD',k:'유니스왑',y:1},
+  {n:'Litecoin',t:'LTC-USD',k:'라이트코인',y:1},
+  {n:'Sui',t:'SUI20947-USD',k:'수이',y:1},
+  {n:'Canton',t:'CC37263-USD',k:'캔톤',y:1},
+  {n:'Avalanche',t:'AVAX-USD',k:'아발란체',y:1},
+  {n:'Hedera',t:'HBAR-USD',k:'헤데라'},
+  {n:'Toncoin',t:'TON11419-USD',k:'톤코인',y:1},
+  {n:'Shiba Inu',t:'SHIB-USD',k:'시바이누'},
+  {n:'Quant',t:'QNT-USD',k:'퀀트'},
+  {n:'Pump.fun',t:'PUMP-USD',k:'펌프펀'},
+  {n:'Bittensor',t:'TAO22974-USD',k:'비트텐서',y:1},
+  {n:'Aave',t:'AAVE-USD',k:'에이브'},
+  {n:'Ethena',t:'ENA30171-USD',k:'에테나',y:1},
+  {n:'Ondo',t:'ONDO-USD',k:'온도'},
+  {n:'Worldcoin',t:'WLD-USD',k:'월드코인'},
+  {n:'Mantle',t:'MNT27075-USD',k:'맨틀',y:1},
+  {n:'Internet Computer',t:'ICP-USD',k:'인터넷컴퓨터'},
+  {n:'Pepe',t:'PEPE24478-USD',k:'페페',y:1},
+  {n:'World Liberty Financial',t:'WLFI-USD',k:'월드리버티파이낸셜'},
+  {n:'Ethereum Classic',t:'ETC-USD',k:'이더리움클래식'},
+  {n:'JUST',t:'JST-USD',k:'저스트'},
+  {n:'Arbitrum',t:'ARB11841-USD',k:'아비트럼',y:1},
+  {n:'Algorand',t:'ALGO-USD',k:'알고랜드'},
+  {n:'Aster',t:'ASTER-USD',k:'아스터'},
+  {n:'Kaspa',t:'KAS-USD',k:'카스파',y:1},
+  {n:'Polygon',t:'POL-USD',k:'폴리곤'},
+  {n:'Jupiter',t:'JUP29210-USD',k:'주피터',y:1},
+  {n:'Render',t:'RENDER-USD',k:'렌더'},
+  {n:'Filecoin',t:'FIL-USD',k:'파일코인'},
+  {n:'PancakeSwap',t:'CAKE-USD',k:'팬케이크스왑'},
+  {n:'Dash',t:'DASH-USD',k:'대시'},
+  {n:'VeChain',t:'VET-USD',k:'비체인'},
+  {n:'Injective',t:'INJ-USD',k:'인젝티브'},
+  {n:'Ether.fi',t:'ETHFI-USD',k:'이더파이'},
+  {n:'Cosmos',t:'ATOM-USD',k:'코스모스'},
+  {n:'Aptos',t:'APT21794-USD',k:'앱토스',y:1},
+  {n:'Stacks',t:'STX-USD',k:'스택스'},
+  {n:'Morpho',t:'MORPHO-USD',k:'모르포'},
+  {n:'Artificial Superintelligence Alliance',t:'FET-USD',k:'페치'},
+  {n:'Pyth Network',t:'PYTH-USD',k:'피스네트워크'},
+  {n:'Curve DAO',t:'CRV-USD',k:'커브'},
+  {n:'Pudgy Penguins',t:'PENGU-USD',k:'퍼지펭귄'},
+  {n:'Raydium',t:'RAY-USD',k:'레이디움'},
+  {n:'Nexo',t:'NEXO-USD',k:'넥소'},
+  {n:'Virtuals Protocol',t:'VIRTUAL-USD',k:'버추얼프로토콜'},
+  {n:'Sei',t:'SEI-USD',k:'세이'},
+  {n:'Official Trump',t:'TRUMP-USD',k:'오피셜트럼프'},
+  {n:'SPX6900',t:'SPX-USD',k:'에스피엑스'},
+  {n:'Starknet',t:'STRK-USD',k:'스타크넷'},
+  {n:'Pendle',t:'PENDLE-USD',k:'펜들'},
+  {n:'Lido DAO',t:'LDO-USD',k:'리도다오'},
+  {n:'Monad',t:'MON-USD',k:'모나드'},
+  {n:'Tezos',t:'XTZ-USD',k:'테조스'},
+  {n:'Terra Classic',t:'LUNC-USD',k:'테라클래식'},
+  {n:'Optimism',t:'OP-USD',k:'옵티미즘'},
+  {n:'Bonk',t:'BONK-USD',k:'봉크'},
+  {n:'Celestia',t:'TIA-USD',k:'셀레스티아'},
+  {n:'Arweave',t:'AR-USD',k:'아위브'},
+  {n:'The Graph',t:'GRT-USD',k:'더그래프'},
+  {n:'THORChain',t:'RUNE-USD',k:'토르체인'},
+  {n:'JasmyCoin',t:'JASMY-USD',k:'재스미코인'},
+  {n:'Conflux',t:'CFX-USD',k:'콘플럭스'},
+  {n:'Floki',t:'FLOKI-USD',k:'플로키'},
+  {n:'IOTA',t:'IOTA-USD',k:'아이오타'},
+  {n:'dogwifhat',t:'WIF-USD',k:'도그위프햇'},
+  {n:'Ethereum Name Service',t:'ENS-USD',k:'이더리움네임서비스'},
+  {n:'Kaia',t:'KAIA-USD',k:'카이아'},
+  {n:'Axie Infinity',t:'AXS-USD',k:'엑시인피니티'},
+  {n:'Compound',t:'COMP-USD',k:'컴파운드'},
+  {n:'Theta Network',t:'THETA-USD',k:'쎄타토큰'},
+  {n:'LayerZero',t:'ZRO-USD',k:'레이어제로'},
+  {n:'The Sandbox',t:'SAND-USD',k:'샌드박스'},
+  {n:'Decentraland',t:'MANA-USD',k:'디센트럴랜드'},
+  {n:'Chiliz',t:'CHZ-USD',k:'칠리즈'},
+  {n:'NEO',t:'NEO-USD',k:'네오'},
+  {n:'Fartcoin',t:'FARTCOIN-USD',k:'파트코인'},
+  {n:'Plasma',t:'XPL-USD',k:'플라즈마'},
+  {n:'Jito',t:'JTO-USD',k:'지토'},
+  {n:'Immutable',t:'IMX-USD',k:'이뮤터블'},
+  {n:'Basic Attention Token',t:'BAT-USD',k:'베이직어텐션토큰'},
+  {n:'1inch',t:'1INCH-USD',k:'1인치'},
+  {n:'MultiversX',t:'EGLD-USD',k:'멀티버스엑스'},
+  {n:'Sonic',t:'S-USD',k:'소닉'},
+  {n:'ApeCoin',t:'APE-USD',k:'에이프코인'},
+  {n:'dYdX',t:'DYDX-USD',k:'디와이디엑스'}
 ];
 
 function krsearchIsKorean(str){ return /[가-힣]/.test(str); }
@@ -4334,6 +4558,11 @@ function krsearchFormatPrice(ticker, price){
   if (krsearchIsKRTicker(ticker) || /=X$/i.test(ticker || '')) {
     // 원화 또는 환율(1달러=몇원): 소수점 없이, 천단위 콤마
     return '₩' + Math.round(displayPrice).toLocaleString('ko-KR');
+  }
+  // 코인만: 1달러 미만이면 유효숫자가 보이도록 소수점 자리를 늘림 (예: 시바이누 $0.00000569 → 기존엔 $0.00로 표시됐음)
+  if (isCryptoTicker(ticker) && displayPrice > 0 && displayPrice < 1) {
+    var dec = Math.min(10, Math.ceil(-Math.log10(displayPrice)) + 3);
+    return '$' + displayPrice.toFixed(dec);
   }
   // 기존과 동일: 달러, 소수점 2자리
   return '$' + displayPrice.toFixed(2);
