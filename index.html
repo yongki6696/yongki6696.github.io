@@ -1087,8 +1087,12 @@ function isCryptoTicker(ticker){ return /-USD$/i.test(ticker || ''); }
 
 // 'UNI7083-USD' → 'UNI', 'BTC-USD' → 'BTC', '1INCH-USD' → '1INCH'
 // (끝에 붙은 4자리 이상 숫자 = 야후가 붙인 CoinMarketCap 번호라서 떼어냄)
+// 이름이 바뀐 코인: 거래소 심볼만 새 이름으로 조회 (티커는 기존 관심목록 호환을 위해 그대로 둠)
+// TON → GRAM: 2026.07.02 리브랜딩, 기존 TONUSDT는 2026.06.30 거래 종료 (실측 확인)
+var CRYPTO_RENAMED = { TON:'GRAM' };
 function cryptoBase(ticker){
-  return String(ticker).toUpperCase().replace(/-USD$/,'').replace(/\d{4,}$/,'');
+  var b = String(ticker).toUpperCase().replace(/-USD$/,'').replace(/\d{4,}$/,'');
+  return CRYPTO_RENAMED[b] || b;
 }
 function cryptoDBEntry(ticker){
   for (var i=0;i<CRYPTO_DB.length;i++) if (CRYPTO_DB[i].t === ticker) return CRYPTO_DB[i];
@@ -1133,14 +1137,11 @@ function cryptoToYahooShape(ticker, rows, source){
 // ── 바이낸스 (공개 시세 전용 주소 사용) ──
 var BINANCE_INTERVAL = { '1d':'1d', '1wk':'1w', '1mo':'1M' };
 function binanceGet(url){
-  // 직접 요청 → 실패 시 전용 프록시 → 그래도 실패 시 공용 프록시 2개 동시 경주
+  // 직접 요청 → 실패 시 공용 프록시 2개 동시 경주
   // HTTP 400 = 바이낸스에 없는 코인(Invalid symbol) → 프록시로 재시도해도 소용없으니 즉시 하이퍼리퀴드로 넘어감
   function stopIfInvalid(e){ if (e && e.httpStatus === 400) { e.definitive = true; throw e; } }
+  // (전용 프록시는 바이낸스가 Cloudflare 서버 접속을 403으로 막아서 건너뜀 — 2026.10.05 실측)
   return fetchJSONTimeout(url).catch(function(e){
-    stopIfInvalid(e);
-    return fetchJSONTimeout(CRYPTO_PROXY+encodeURIComponent(url));
-  }).catch(function(e){
-    if (e && e.definitive) throw e;
     stopIfInvalid(e);
     return raceProxies([
       fetchJSONTimeout('https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(url)),
@@ -1187,11 +1188,9 @@ function hlFetchRows(coin, div, period){
     startTime: Date.now() - 5*365*864e5, endTime: Date.now() } });
   var url = 'https://api.hyperliquid.xyz/info';
   function opts(ct){ return { method:'POST', headers:{'Content-Type': ct || 'application/json'}, body: body }; }
-  // ① 직접(JSON) → ② 전용 프록시 → ③ 직접(text/plain: 브라우저 사전검사(preflight)를 피하는 방식)
+  // ① 직접 → ② 전용 프록시 (하이퍼리퀴드는 JSON 형식만 받음 — text/plain은 415 거절 확인됨)
   return fetchJSONTimeout(url, opts()).catch(function(){
     return fetchJSONTimeout(CRYPTO_PROXY+encodeURIComponent(url), opts());
-  }).catch(function(){
-    return fetchJSONTimeout(url, opts('text/plain'));
   }).then(function(arr){
     if (!Array.isArray(arr)) throw new Error('응답 오류');
     if (!arr.length) throw new Error('없는 종목');
@@ -1232,10 +1231,20 @@ function srcReason(e){
   return '접속실패';
 }
 
+// 이보다 짧으면 '기록이 짧다'고 보고 하이퍼리퀴드와 비교 (일봉 1년 / 주봉 1년 / 월봉 2년)
+var CRYPTO_MIN_LEN = { '1d': 365, '1wk': 52, '1mo': 24 };
 function fetchCrypto(ticker, period){
   var entry = cryptoDBEntry(ticker);
   var why = [];
-  return fetchBinance(ticker, period).catch(function(e){
+  return fetchBinance(ticker, period).then(function(bin){
+    // 바이낸스에 최근 상장된 코인은 데이터가 짧아서 RSI·차트가 안 나옴 (예: HYPE는 바이낸스 상장 12일치뿐)
+    // → 기록이 짧으면 하이퍼리퀴드도 받아서 더 긴 쪽을 사용
+    var n = bin.chart.result[0].timestamp.length;
+    if (n >= CRYPTO_MIN_LEN[period]) return bin;
+    return fetchHyperliquid(ticker, period).then(function(hl){
+      return hl.chart.result[0].timestamp.length > n ? hl : bin;
+    }, function(){ return bin; });
+  }, function(e){
     why.push('바이낸스 ' + srcReason(e));
     return fetchHyperliquid(ticker, period);
   }).catch(function(e){
@@ -4494,7 +4503,7 @@ var CRYPTO_DB = [
   {n:'Canton',t:'CC37263-USD',k:'캔톤',y:1},
   {n:'Avalanche',t:'AVAX-USD',k:'아발란체',y:1},
   {n:'Hedera',t:'HBAR-USD',k:'헤데라'},
-  {n:'Toncoin',t:'TON11419-USD',k:'톤코인',y:1},
+  {n:'Gram (구 Toncoin)',t:'TON11419-USD',k:'톤코인 그램 GRAM'},
   {n:'Shiba Inu',t:'SHIB-USD',k:'시바이누'},
   {n:'Quant',t:'QNT-USD',k:'퀀트'},
   {n:'Pump.fun',t:'PUMP-USD',k:'펌프펀'},
