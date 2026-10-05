@@ -718,7 +718,7 @@ body.edit-mode .edit-hint { display:block; }
   </div>
 
   <div class="ticker-wrap hidden" id="ticker-wrap">
-    <div class="ticker-tag">🔥 RSI&lt;40</div>
+    <div class="ticker-tag">🔥 RSI≤30</div>
     <div class="ticker-view">
       <div class="ticker-track" id="ticker-track"></div>
     </div>
@@ -811,7 +811,7 @@ body.edit-mode .edit-hint { display:block; }
     </p>
     <p class="guide-p">
       <b>4. 시총 상위 종목 전광판 &amp; 순위</b> — 한국·미국 시가총액 상위 종목들을 별도로 조용히 스캔해서,
-      RSI 40 미만인 종목은 상단 전광판에 흐르고, 시가총액 TOP15 종목들은 한국·미국으로 나뉘어 시가총액 순서대로
+      RSI 30 이하인 종목은 상단 전광판에 흐르고, 시가총액 TOP15 종목들은 한국·미국으로 나뉘어 시가총액 순서대로
       순위표에 정리됩니다. 이 중 RSI가 30 이하인 종목은 🔥 표시와 함께 색상으로 강조됩니다.
       전광판이나 순위표의 종목을 탭하면 감시 목록에 바로 추가됩니다.
     </p>
@@ -1507,31 +1507,33 @@ function loadStocksConcurrent(list, concurrency, onDone){
 }
 
 // ══════════════════════════════════════════
-// RSI<40 전광판 — 감시 목록과는 완전히 별개로,
+// RSI≤30 전광판 — 감시 목록과는 완전히 별개로,
 // 시총 상위 종목 60개(한국30+미국30)만 백그라운드에서 조용히 스캔함
 // (검색DB 전체 3천여개를 스캔하는 건 무료 프록시로는 사실상 불가능해서 후보군을 제한함)
 // ══════════════════════════════════════════
 var TICKER_POOL = [
-  // 코스피 시가총액 상위 30 (2026.09.03 기준) — 우리금융지주 신규 진입, HD한국조선해양 30위 밖으로
+  // 코스피 시가총액 상위 30 (2026.10.01 기준, 보통주만) — 한미반도체 신규 진입, 고려아연 30위 밖으로
   {n:'삼성전자',t:'005930.KS'},{n:'SK하이닉스',t:'000660.KS'},{n:'SK스퀘어',t:'402340.KS'},
-  {n:'삼성전기',t:'009150.KS'},{n:'현대차',t:'005380.KS'},{n:'LG에너지솔루션',t:'373220.KS'},
-  {n:'삼성바이오로직스',t:'207940.KS'},{n:'KB금융',t:'105560.KS'},{n:'삼성물산',t:'028260.KS'},
-  {n:'삼성생명',t:'032830.KS'},{n:'한화에어로스페이스',t:'012450.KS'},{n:'신한지주',t:'055550.KS'},
-  {n:'두산에너빌리티',t:'034020.KS'},{n:'기아',t:'000270.KS'},{n:'HD현대중공업',t:'329180.KS'},
-  {n:'삼성SDI',t:'006400.KS'},{n:'셀트리온',t:'068270.KS'},{n:'SK',t:'034730.KS'},
-  {n:'하나금융지주',t:'086790.KS'},{n:'현대모비스',t:'012330.KS'},{n:'LG전자',t:'066570.KS'},
-  {n:'삼성화재',t:'000810.KS'},{n:'NAVER',t:'035420.KS'},{n:'LS ELECTRIC',t:'010120.KS'},
-  {n:'POSCO홀딩스',t:'005490.KS'},{n:'한화오션',t:'042660.KS'},{n:'고려아연',t:'010130.KS'},
-  {n:'우리금융지주',t:'316140.KS'},{n:'HD현대일렉트릭',t:'267260.KS'},{n:'효성중공업',t:'298040.KS'},
-  // 미국 시가총액 상위 30 (2026.09.03 기준) — Coca-Cola·Caterpillar 재진입, GE Aerospace 순위 밖으로
+  {n:'삼성전기',t:'009150.KS'},{n:'LG에너지솔루션',t:'373220.KS'},{n:'현대차',t:'005380.KS'},
+  {n:'삼성바이오로직스',t:'207940.KS'},{n:'KB금융',t:'105560.KS'},{n:'삼성생명',t:'032830.KS'},
+  {n:'삼성물산',t:'028260.KS'},{n:'한화에어로스페이스',t:'012450.KS'},{n:'두산에너빌리티',t:'034020.KS'},
+  {n:'신한지주',t:'055550.KS'},{n:'HD현대중공업',t:'329180.KS'},{n:'기아',t:'000270.KS'},
+  {n:'셀트리온',t:'068270.KS'},{n:'SK',t:'034730.KS'},{n:'삼성SDI',t:'006400.KS'},
+  {n:'하나금융지주',t:'086790.KS'},{n:'LG전자',t:'066570.KS'},{n:'현대모비스',t:'012330.KS'},
+  {n:'LS ELECTRIC',t:'010120.KS'},{n:'NAVER',t:'035420.KS'},{n:'삼성화재',t:'000810.KS'},
+  {n:'효성중공업',t:'298040.KS'},{n:'한미반도체',t:'042700.KS'},{n:'우리금융지주',t:'316140.KS'},
+  {n:'POSCO홀딩스',t:'005490.KS'},{n:'HD현대일렉트릭',t:'267260.KS'},{n:'한화오션',t:'042660.KS'},
+  // 미국 시가총액 상위 30 (2026.10.05 기준) — Applied Materials 신규 진입, Coca-Cola 30위 밖으로
   {n:'NVIDIA',t:'NVDA'},{n:'Apple',t:'AAPL'},{n:'Alphabet',t:'GOOGL'},
-  {n:'Microsoft',t:'MSFT'},{n:'Amazon',t:'AMZN'},{n:'SpaceX',t:'SPCX'},{n:'Broadcom',t:'AVGO'},
-  {n:'Meta Platforms',t:'META'},{n:'Tesla',t:'TSLA'},{n:'Micron',t:'MU'},{n:'Berkshire Hathaway',t:'BRK-B'},
-  {n:'Eli Lilly',t:'LLY'},{n:'JPMorgan Chase',t:'JPM'},{n:'Walmart',t:'WMT'},{n:'AMD',t:'AMD'},
-  {n:'Visa',t:'V'},{n:'Johnson & Johnson',t:'JNJ'},{n:'ExxonMobil',t:'XOM'},{n:'Mastercard',t:'MA'},
-  {n:'Intel',t:'INTC'},{n:'AbbVie',t:'ABBV'},{n:'Oracle',t:'ORCL'},{n:'Bank of America',t:'BAC'},
-  {n:'Cisco',t:'CSCO'},{n:'Palantir',t:'PLTR'},{n:'Chevron',t:'CVX'},{n:'Costco',t:'COST'},
-  {n:'Lam Research',t:'LRCX'},{n:'Coca-Cola',t:'KO'},{n:'Caterpillar',t:'CAT'}
+  {n:'Microsoft',t:'MSFT'},{n:'Amazon',t:'AMZN'},{n:'SpaceX',t:'SPCX'},
+  {n:'Meta Platforms',t:'META'},{n:'Broadcom',t:'AVGO'},{n:'Tesla',t:'TSLA'},
+  {n:'Micron',t:'MU'},{n:'Berkshire Hathaway',t:'BRK-B'},{n:'AMD',t:'AMD'},
+  {n:'Eli Lilly',t:'LLY'},{n:'JPMorgan Chase',t:'JPM'},{n:'Walmart',t:'WMT'},
+  {n:'Visa',t:'V'},{n:'ExxonMobil',t:'XOM'},{n:'Intel',t:'INTC'},
+  {n:'Johnson & Johnson',t:'JNJ'},{n:'Mastercard',t:'MA'},{n:'AbbVie',t:'ABBV'},
+  {n:'Palantir',t:'PLTR'},{n:'Cisco',t:'CSCO'},{n:'Lam Research',t:'LRCX'},
+  {n:'Oracle',t:'ORCL'},{n:'Applied Materials',t:'AMAT'},{n:'Costco',t:'COST'},
+  {n:'Chevron',t:'CVX'},{n:'Caterpillar',t:'CAT'},{n:'Bank of America',t:'BAC'}
 ];
 
 var tickerScanResults = {}; // ticker -> {n,t,rsi}
@@ -1700,7 +1702,7 @@ function renderTicker(){
   var track = document.getElementById('ticker-track');
   if (!wrap || !track) return;
   var hits = Object.keys(tickerScanResults).map(function(k){ return tickerScanResults[k]; })
-    .filter(function(x){ return x.rsi != null && x.rsi < 40; })
+    .filter(function(x){ return x.rsi != null && x.rsi <= 30; })  // RSI 30 이하(과매도)만 — 매수 신호·순위표 강조 기준과 동일
     .sort(function(a,b){ return a.rsi - b.rsi; });
   if (!hits.length) {
     wrap.classList.add('hidden');
