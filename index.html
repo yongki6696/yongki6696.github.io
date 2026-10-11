@@ -230,6 +230,18 @@ body.edit-mode .card { cursor:default; }
 .legend-line { display:inline-block; width:14px; height:2px; border-radius:1px; }
 .legend-dash { display:inline-block; width:14px; height:0; border-top:2px dashed #f59e0b; }
 
+/* 일봉/주봉/월봉 구분: 카드 왼쪽 색띠 + 오른쪽 위 기간 배지 (일봉=파랑, 주봉=주황, 월봉=청록) */
+.card.p-1d  { --pc:#3b82f6; }
+.card.p-1wk { --pc:#f59e0b; }
+.card.p-1mo { --pc:#2dd4bf; }
+.card.p-1d::before, .card.p-1wk::before, .card.p-1mo::before {
+  content:''; position:absolute; left:0; top:14px; bottom:14px; width:4px; border-radius:0 4px 4px 0; background:var(--pc); pointer-events:none;
+}
+.period-pill { display:inline-flex; align-items:center; padding:5px 11px; border-radius:10px; font-size:13px; font-weight:800; letter-spacing:.3px;
+  color:var(--pc); border:1px solid; white-space:nowrap; }
+.p-1d  .period-pill { background:rgba(59,130,246,.16);  border-color:rgba(59,130,246,.45); }
+.p-1wk .period-pill { background:rgba(245,158,11,.16);  border-color:rgba(245,158,11,.45); }
+.p-1mo .period-pill { background:rgba(45,212,191,.16);  border-color:rgba(45,212,191,.45); }
 .btn-del { background:rgba(239,68,68,.12); color:var(--danger); border:none; border-radius:8px; padding:5px 10px; font-size:13px; cursor:pointer; touch-action:manipulation; }
 .btn-del:active { background:rgba(239,68,68,.25); }
 
@@ -2317,7 +2329,7 @@ function renderCard(s){
   var krsearchDisplay=krsearchTickerToName(s.ticker);
   var mddDisplay=mddHTML(s);
 
-  el.className='card '+cardCls(v);
+  el.className='card '+cardCls(v)+' p-'+s.period;
   el.innerHTML=
     '<div class="drag-handle">⠿</div>'
     +'<div class="card-top">'
@@ -2325,12 +2337,13 @@ function renderCard(s){
     +'<div class="ticker">'+krsearchDisplay+'</div>'+getBadge(v,s.error)
     +'</div>'+(s.name?'<div class="cname">'+s.name+'</div>':'')+'</div>'
     +'<div class="card-right">'
+    +'<span class="period-pill">'+pLabel(s.period)+'</span>'
     +'<button class="btn-del" data-ticker="'+s.ticker+'" data-period="'+s.period+'">✕</button>'
     +'</div></div>'
     +'<div class="card-body"><div>'+priceHTML+mddDisplay+'</div>'
     +'<div><div class="rsi-label-sm">RSI(14) · '+pLabel(s.period)+'</div>'+rsiHTML+'</div></div>'
     +chartHTML+divHTML+macHTML
-    +'<div class="card-foot"><span>'+pLabel(s.period)+' · 최근 '+chartDisplayLen+'일</span><span>'+footRight+'</span></div>';
+    +'<div class="card-foot"><span>'+pLabel(s.period)+' · 최근 '+chartDisplayLen+(s.period==='1wk'?'주':s.period==='1mo'?'개월':'일')+'</span><span>'+footRight+'</span></div>';
 }
 
 // ── 전체 렌더 ──
