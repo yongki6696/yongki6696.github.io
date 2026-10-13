@@ -1820,13 +1820,15 @@ function mddHTML(s){
 }
 
 // ── 미니차트 ──
-// 50주선 범례 (선이 실제로 그려질 만큼 데이터가 있을 때만 표시)
-function ma50wLegendHTML(s){
-  var L=s.chartDataLong, n=s.ma50wLen;
-  if(!L || !n || L.length<n) return '';
-  return '<span><span class="legend-line" style="background:#c084fc"></span>50주선</span>';
+// 일봉 차트 장기 이동평균선 정의: 200일선(흰색) + 50주선(자홍색, 주식 250일 / 코인 350일)
+var MA200_COLOR = '#f1f5f9', MA50W_COLOR = '#e879f9';  // 200일선=흰색, 50주선=자홍색 (120일선 주황 점선·가격선 초록/빨강과 확실히 구별)
+function longMALines(s){
+  if(!s.chartDataLong || !s.ma50wLen) return [];
+  return [ {len:200, color:MA200_COLOR, label:'200일선'},
+           {len:s.ma50wLen, color:MA50W_COLOR, label:'50주선'} ]
+    .filter(function(ln){ return s.chartDataLong.length >= ln.len; });
 }
-function makeMiniChart(data,color,displayLen,longData,maLen){
+function makeMiniChart(data,color,displayLen,longData,longLines){
   if(!data||data.length<2) return '';
   displayLen = displayLen || Math.min(180, data.length);
   var display=data.slice(-displayLen),W=320,H=90,PAD=4;
@@ -1844,15 +1846,20 @@ function makeMiniChart(data,color,displayLen,longData,maLen){
     }
     if(mp.length>=2) maLine='<path d="M'+mp.join('L')+'" fill="none" stroke="#f59e0b" stroke-width="1.2" stroke-dasharray="3,2" stroke-linecap="round"/>';
   }
-  // 50주선: 화면 구간과 '끝(최신)'을 맞춰 긴 데이터에서 계산 (차트 위아래 범위를 벗어난 구간은 자연스럽게 잘림)
-  if(longData && maLen && longData.length>=maLen){
-    var wp=[], startW=longData.length-display.length, pre=[0];
+  // 긴 데이터 기반 이동평균선들(일봉 전용: 200일선·50주선) — 화면 구간과 '끝(최신)'을 맞춰 계산
+  // (차트 위아래 범위를 벗어난 구간은 자연스럽게 잘림)
+  if(longData && longLines && longLines.length){
+    var startW=longData.length-display.length, pre=[0];
     for(var k=0;k<longData.length;k++) pre.push(pre[k]+longData[k]);   // 누적합 → 구간 평균을 바로 계산
-    for(var i2=0;i2<display.length;i2++){
-      var li=startW+i2;
-      if(li>=maLen-1) wp.push(tx(i2,display.length).toFixed(1)+','+ty((pre[li+1]-pre[li+1-maLen])/maLen).toFixed(1));
-    }
-    if(wp.length>=2) maLine+='<path d="M'+wp.join('L')+'" fill="none" stroke="#c084fc" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>';
+    longLines.forEach(function(ln){
+      if(longData.length<ln.len) return;
+      var wp=[];
+      for(var i2=0;i2<display.length;i2++){
+        var li=startW+i2;
+        if(li>=ln.len-1) wp.push(tx(i2,display.length).toFixed(1)+','+ty((pre[li+1]-pre[li+1-ln.len])/ln.len).toFixed(1));
+      }
+      if(wp.length>=2) maLine+='<path d="M'+wp.join('L')+'" fill="none" stroke="'+ln.color+'" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>';
+    });
   }
   var gid='g'+Math.random().toString(36).slice(2,7);
   return '<svg class="mini-chart" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'
@@ -2353,11 +2360,11 @@ function renderCard(s){
   var chartColor=(s.chartData&&s.chartData.length>=2&&s.chartData[s.chartData.length-1]>=s.chartData[0])?'#22c55e':'#ef4444';
   var legendHTML='';
   if(s.chartData){
-    legendHTML='<div class="chart-legend"><span><span class="legend-line" style="background:'+chartColor+'"></span>종가</span>'
-      +(s.chartData.length>=120?'<span><span class="legend-dash"></span>MA120</span>':'')
-      +ma50wLegendHTML(s)
-      +'<span><span style="color:#4ade80;font-weight:800;margin-right:3px">▲</span>매수(RSI≤30)</span>'
-      +'<span><span style="color:#ef4444;font-weight:800;margin-right:3px">▼</span>고점주의</span></div>';
+    // 범례: 이동평균선만 표시 (종가·매수·고점주의 문구는 제외 — 차트 위 ▲매수/▼고점주의 표시는 그대로)
+    var maUnit = s.period==='1wk' ? '주선' : s.period==='1mo' ? '개월선' : '일선';
+    var legendItems = (s.chartData.length>=120 ? '<span><span class="legend-dash"></span>120'+maUnit+'</span>' : '')
+      + longMALines(s).map(function(ln){ return '<span><span class="legend-line" style="background:'+ln.color+'"></span>'+ln.label+'</span>'; }).join('');
+    legendHTML = legendItems ? '<div class="chart-legend">'+legendItems+'</div>' : '';
   }
   // 다이버전스는 한 번만 계산해서 배지와 차트 마커 둘 다에 재사용 (중복 계산 방지)
   var divResult = (s.chartData && s.chartData.length>=30) ? detectDivergence(s.chartData, s.timestamps) : null;
@@ -2366,7 +2373,7 @@ function renderCard(s){
   var divMarkerHTML = divResult ? makeDivMarkers(s.chartData, divResult, chartDisplayLen) : '';
   var oversoldMarkerHTML = s.chartData ? makeOversoldMarkers(s.chartData, chartDisplayLen) : '';
   var chartHTML = s.chartData
-    ? (legendHTML + '<div style="position:relative">' + makeMiniChart(s.chartData,chartColor,chartDisplayLen,s.chartDataLong,s.ma50wLen) + oversoldMarkerHTML + divMarkerHTML + '</div>')
+    ? (legendHTML + '<div style="position:relative">' + makeMiniChart(s.chartData,chartColor,chartDisplayLen,s.chartDataLong,longMALines(s)) + oversoldMarkerHTML + divMarkerHTML + '</div>')
     : '';
   var divHTML = divResult ? getDivHTMLFromResult(divResult) : '';
   // 골든크로스/데드크로스 감지 (신규, 다이버전스와 별개로 독립 계산)
