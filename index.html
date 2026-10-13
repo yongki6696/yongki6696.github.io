@@ -1060,8 +1060,12 @@ function raceProxies(promises){
 }
 
 function fetchYahoo(ticker,period){
+  var url='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(ticker)+'?interval='+period+'&range='+RANGE[period]+'&t='+Date.now();
+  return fetchYahooUrl(url);
+}
+// 야후 요청 공통부 (전용 프록시 → 공용 프록시 경주 → 나머지 순차)
+function fetchYahooUrl(url){
   var ts=Date.now();
-  var url='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(ticker)+'?interval='+period+'&range='+RANGE[period]+'&t='+ts;
   // RSIngTime만 전용으로 쓰는 Cloudflare Worker 프록시 — 다른 앱들과 자원을 나눠쓰지 않아서
   // 공용 무료 프록시들보다 훨씬 안정적임. 이걸 최우선으로 시도함.
   var dedicatedProxy = 'https://rsingtime-proxy.yongki6696.workers.dev/?url='+encodeURIComponent(url)+'&_cb='+ts;
@@ -1272,7 +1276,28 @@ function fetchCrypto(ticker, period){
 // 데이터 받아오는 입구: 코인(-USD)·하이퍼리퀴드 시장(io:ANTH 등)만 전용 경로, 나머지(한국·미국·환율)는 기존 야후 그대로
 function fetchChartData(ticker, period){
   if (isHLTicker(ticker)) return fetchHip3(ticker, period);
-  return isCryptoTicker(ticker) ? fetchCrypto(ticker, period) : fetchYahoo(ticker, period);
+  if (isCryptoTicker(ticker)) return fetchCrypto(ticker, period);
+  var p = fetchYahoo(ticker, period);
+  return period === '1d' ? p.then(function(d){ return patchMissingPrevClose(ticker, d); }) : p;
+}
+
+// ── 야후 일봉에서 '직전 거래일 종가'가 빠진(null) 경우 보정 ──
+// 실제 사례(2026.10.13 SK하이닉스): 10/12 종가가 null로 와서 10/8 종가와 비교 → 등락률 -13.59%로 표시
+// (증권사 실제 -8.72%). 이럴 때만 장중 데이터(5분봉 1일치)를 한 번 더 받아서 야후가 따로 갖고 있는
+// 정확한 전일 종가(previousClose)로 빈칸을 채움 → 등락률·RSI·차트 모두 정상화. 빈칸이 없으면 추가 요청 없음.
+function patchMissingPrevClose(ticker, data){
+  try {
+    var q = data.chart.result[0].indicators.quote[0].close;
+    var n = q.length;
+    if (n < 3 || q[n-2] != null) return data;           // 직전 칸이 정상이면 그대로
+  } catch(e){ return data; }
+  var url = 'https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(ticker)+'?interval=5m&range=1d&t='+Date.now();
+  return fetchYahooUrl(url).then(function(intra){
+    var m = intra.chart.result[0].meta || {};
+    var pc = (m.previousClose != null) ? m.previousClose : m.chartPreviousClose;
+    if (typeof pc === 'number' && pc > 0) data.chart.result[0].indicators.quote[0].close[n-2] = pc;
+    return data;
+  }, function(){ return data; });                       // 보정 실패해도 원래 데이터로 계속 진행
 }
 function calcRSI(closes){
   var c=closes.filter(function(v){return v!=null&&!isNaN(v);});
