@@ -1820,14 +1820,11 @@ function mddHTML(s){
 }
 
 // ── 미니차트 ──
-// 50주선 범례: 현재가가 50주선보다 몇 % 위/아래인지 함께 표시 (선이 차트 범위 밖이라 안 보일 때도 위치를 알 수 있게)
+// 50주선 범례 (선이 실제로 그려질 만큼 데이터가 있을 때만 표시)
 function ma50wLegendHTML(s){
   var L=s.chartDataLong, n=s.ma50wLen;
-  if(!L || !n || L.length<n || !s.price) return '';
-  var sum=0; for(var i=L.length-n;i<L.length;i++) sum+=L[i];
-  var ma=sum/n, gap=(s.price-ma)/ma*100;
-  var gapTxt=(gap>=0?'+':'')+gap.toFixed(1)+'%';
-  return '<span title="현재가 vs 50주선"><span class="legend-line" style="background:#c084fc"></span>50주선 <b style="color:'+(gap>=0?'#4ade80':'#f87171')+';font-weight:700">'+gapTxt+'</b></span>';
+  if(!L || !n || L.length<n) return '';
+  return '<span><span class="legend-line" style="background:#c084fc"></span>50주선</span>';
 }
 function makeMiniChart(data,color,displayLen,longData,maLen){
   if(!data||data.length<2) return '';
