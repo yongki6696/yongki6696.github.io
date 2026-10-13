@@ -1519,6 +1519,10 @@ function loadStock(s){
     // 화면 표시는 180일이지만, MA120(120일 이동평균)이 표시 구간 처음부터 끝까지 다 그려지려면
     // 그 이전 120일치 데이터가 추가로 더 필요해서 180+120=300일치를 보관해둠
     s.chartData=valid.slice(-300);
+    // 50주 이동평균선(일봉 전용): 주식 250일(주5일×50), 코인·하이퍼리퀴드 350일(주7일×50)
+    // 기존 chartData(300개)는 RSI·고점주의·다이버전스 계산에 그대로 쓰고, 선 그리기용 긴 데이터만 따로 보관
+    s.ma50wLen = (s.period==='1d') ? ((isCryptoTicker(s.ticker)||isHLTicker(s.ticker)) ? 350 : 250) : 0;
+    s.chartDataLong = s.ma50wLen ? valid.slice(-(300 + s.ma50wLen)) : null;
     s.timestamps=validIdx.slice(-300).map(function(idx){ return timestamps[idx]!=null?timestamps[idx]:timestamps[timestamps.length-1]; });
     s.loading=false; s.error=null; s.lastUp=new Date();
     renderLastUpdate(s.lastUp);
@@ -1816,7 +1820,16 @@ function mddHTML(s){
 }
 
 // ── 미니차트 ──
-function makeMiniChart(data,color,displayLen){
+// 50주선 범례: 현재가가 50주선보다 몇 % 위/아래인지 함께 표시 (선이 차트 범위 밖이라 안 보일 때도 위치를 알 수 있게)
+function ma50wLegendHTML(s){
+  var L=s.chartDataLong, n=s.ma50wLen;
+  if(!L || !n || L.length<n || !s.price) return '';
+  var sum=0; for(var i=L.length-n;i<L.length;i++) sum+=L[i];
+  var ma=sum/n, gap=(s.price-ma)/ma*100;
+  var gapTxt=(gap>=0?'+':'')+gap.toFixed(1)+'%';
+  return '<span title="현재가 vs 50주선"><span class="legend-line" style="background:#c084fc"></span>50주선 <b style="color:'+(gap>=0?'#4ade80':'#f87171')+';font-weight:700">'+gapTxt+'</b></span>';
+}
+function makeMiniChart(data,color,displayLen,longData,maLen){
   if(!data||data.length<2) return '';
   displayLen = displayLen || Math.min(180, data.length);
   var display=data.slice(-displayLen),W=320,H=90,PAD=4;
@@ -1833,6 +1846,16 @@ function makeMiniChart(data,color,displayLen){
       if(di>=119){var sum=0;for(var j=di-119;j<=di;j++)sum+=data[j];mp.push(tx(i,display.length).toFixed(1)+','+ty(sum/120).toFixed(1));}
     }
     if(mp.length>=2) maLine='<path d="M'+mp.join('L')+'" fill="none" stroke="#f59e0b" stroke-width="1.2" stroke-dasharray="3,2" stroke-linecap="round"/>';
+  }
+  // 50주선: 화면 구간과 '끝(최신)'을 맞춰 긴 데이터에서 계산 (차트 위아래 범위를 벗어난 구간은 자연스럽게 잘림)
+  if(longData && maLen && longData.length>=maLen){
+    var wp=[], startW=longData.length-display.length, pre=[0];
+    for(var k=0;k<longData.length;k++) pre.push(pre[k]+longData[k]);   // 누적합 → 구간 평균을 바로 계산
+    for(var i2=0;i2<display.length;i2++){
+      var li=startW+i2;
+      if(li>=maLen-1) wp.push(tx(i2,display.length).toFixed(1)+','+ty((pre[li+1]-pre[li+1-maLen])/maLen).toFixed(1));
+    }
+    if(wp.length>=2) maLine+='<path d="M'+wp.join('L')+'" fill="none" stroke="#c084fc" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>';
   }
   var gid='g'+Math.random().toString(36).slice(2,7);
   return '<svg class="mini-chart" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'
@@ -2335,6 +2358,7 @@ function renderCard(s){
   if(s.chartData){
     legendHTML='<div class="chart-legend"><span><span class="legend-line" style="background:'+chartColor+'"></span>종가</span>'
       +(s.chartData.length>=120?'<span><span class="legend-dash"></span>MA120</span>':'')
+      +ma50wLegendHTML(s)
       +'<span><span style="color:#4ade80;font-weight:800;margin-right:3px">▲</span>매수(RSI≤30)</span>'
       +'<span><span style="color:#ef4444;font-weight:800;margin-right:3px">▼</span>고점주의</span></div>';
   }
@@ -2345,7 +2369,7 @@ function renderCard(s){
   var divMarkerHTML = divResult ? makeDivMarkers(s.chartData, divResult, chartDisplayLen) : '';
   var oversoldMarkerHTML = s.chartData ? makeOversoldMarkers(s.chartData, chartDisplayLen) : '';
   var chartHTML = s.chartData
-    ? (legendHTML + '<div style="position:relative">' + makeMiniChart(s.chartData,chartColor,chartDisplayLen) + oversoldMarkerHTML + divMarkerHTML + '</div>')
+    ? (legendHTML + '<div style="position:relative">' + makeMiniChart(s.chartData,chartColor,chartDisplayLen,s.chartDataLong,s.ma50wLen) + oversoldMarkerHTML + divMarkerHTML + '</div>')
     : '';
   var divHTML = divResult ? getDivHTMLFromResult(divResult) : '';
   // 골든크로스/데드크로스 감지 (신규, 다이버전스와 별개로 독립 계산)
