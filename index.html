@@ -694,7 +694,7 @@ body.edit-mode .edit-hint { display:block; }
     <button class="btn-allow" id="btn-notif">허용</button>
   </div>
   <div class="banner banner-push hidden" id="push-row">
-    <span id="push-text">📲 앱이 꺼져 있어도 RSI 30↓·70↑ 알림 받기</span>
+    <span id="push-text">📲 매일 한국장·미국장 개장 후 RSI 알림 받기</span>
     <span class="push-btns"><button class="btn-x hidden" id="btn-push-test">테스트</button><button class="btn-allow" id="btn-push">켜기</button></span>
   </div>
 
@@ -3313,13 +3313,24 @@ function pushPost(path, body){
   return fetch(PUSH_API+path,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
     .then(function(r){ return r.json().then(function(j){ if(!r.ok||j.ok===false) throw new Error(j.error||('HTTP '+r.status)); return j; }); });
 }
+// 미국장 알림 시각(뉴욕 10:00)을 한국시간으로: 서머타임이면 밤 11시, 아니면 밤 12시 (서버와 같은 기준, 자동 계산)
+function usAlertKstLabel(){
+  try{
+    var p=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hourCycle:'h23'}).formatToParts(new Date());
+    var nyH=+p.filter(function(x){return x.type==='hour';})[0].value, utcH=new Date().getUTCHours();
+    var off=((nyH-utcH+36)%24)-12;                 // 뉴욕 UTC 오프셋 (-4 서머타임 / -5 겨울)
+    var k=((10-off+9)%24+24)%24;                   // 뉴욕 10시 → 한국시간
+    return k===0?'밤 12시':'밤 '+(k-12)+'시';
+  }catch(e){ return '미국장 개장 후'; }
+}
+function pushOffText(){ return '📲 매일 오전 10시·'+usAlertKstLabel()+' RSI 30↓·70↑ 알림 받기'; }
 function renderPushRow(){
   var row=document.getElementById('push-row'); if(!row) return;
   if(!pushSupported() && !(isIOSDevice() && !isStandalone())){ row.classList.add('hidden'); return; }
   row.classList.remove('hidden');
   var on = pushIsOn();
   row.classList.toggle('on', on);
-  document.getElementById('push-text').textContent = on ? '✅ 앱 꺼져도 RSI 알림 받는 중' : '📲 앱이 꺼져 있어도 RSI 30↓·70↑ 알림 받기';
+  document.getElementById('push-text').textContent = on ? '✅ 매일 오전 10시·'+usAlertKstLabel()+' RSI 알림 받는 중' : pushOffText();
   document.getElementById('btn-push').textContent = on ? '끄기' : '켜기';
   document.getElementById('btn-push-test').classList.toggle('hidden', !on);
 }
@@ -3343,7 +3354,7 @@ function togglePush(){
     var items=pushItems();
     return pushPost('/subscribe',{ subscription:sub.toJSON(), items:items }).then(function(){
       try{ localStorage.setItem('rst_push_on','1'); localStorage.setItem('rst_push_sig',pushSig(items)); localStorage.setItem('rst_push_at',String(Date.now())); }catch(e){}
-      toast('✅','앱 꺼져도 알림 켜짐','감시 목록 '+items.length+'종목을 1시간마다 확인해서 RSI 30 이하·70 이상이 되면 알려드려요','ok',7000);
+      toast('✅','앱 꺼져도 알림 켜짐','매일 오전 10시(한국장 개장 후)·'+usAlertKstLabel()+'(미국장 개장 후, 서머타임 자동)에 감시 목록 '+items.length+'종목 중 RSI 30 이하·70 이상인 종목을 알려드려요','ok',8000);
     });
   }).catch(function(e){
     toast('⚠️','알림 켜기 실패',(e&&e.message)||'잠시 후 다시 시도해 주세요','alert',7000);
