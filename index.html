@@ -188,6 +188,7 @@ main { max-width:680px; margin:0 auto; padding:calc(env(safe-area-inset-top) + 8
 }
 .card.s-alert { border-color:var(--danger); box-shadow:0 0 0 1px var(--danger),0 0 20px rgba(239,68,68,.1); }
 .card.s-warn  { border-color:var(--warn);   box-shadow:0 0 0 1px var(--warn),0 0 20px rgba(245,158,11,.07); }
+.card.s-over  { border-color:#a78bfa; box-shadow:0 0 0 1px #a78bfa,0 0 20px rgba(167,139,250,.12); } /* RSI 70 이상 과열 */
 .card.is-dragging { opacity:.4; transform:scale(0.97); }
 .card.drag-over   { border-color:var(--accent2) !important; box-shadow:0 0 0 2px var(--accent2) !important; transform:scale(1.01); }
 
@@ -1767,12 +1768,13 @@ function renderTicker(){
   track.style.animationDuration = duration.toFixed(1) + 's';
 }
 
-function refreshAll(){
-  if(!stocks.length){toast('ℹ️','종목 없음','먼저 종목을 추가해주세요','info');return;}
+function refreshAll(isAuto){
+  if(!stocks.length){ if(!isAuto) toast('ℹ️','종목 없음','먼저 종목을 추가해주세요','info'); return; }
   var btn=document.getElementById('btn-refresh');
   btn.disabled=true; btn.textContent='⏳ 로딩중';
   loadStocksConcurrent(stocks, 3, function(){
     btn.disabled=false; btn.textContent='⟳ 새로고침';
+    if(!isAuto) showOverSummary();   // 직접 새로고침했을 때만 과열 종목 요약 (자동 새로고침은 조용히)
   });
 }
 
@@ -1780,14 +1782,34 @@ function refreshAll(){
 // 알림에 표시할 이름: 한글 종목명이 있으면 한글, 없으면 티커 (+ 일봉/주봉/월봉)
 function alertLabel(s){
   var nm = krsearchTickerToName(s.ticker);
-  if (nm === s.ticker) { var c = (typeof cryptoDBEntry==='function') ? cryptoDBEntry(s.ticker) : null; if (c) nm = c.k ? c.k.split(' ')[0] : c.n; }
+  if (nm === s.ticker) {
+    var db = (typeof US_STOCK_DB!=='undefined' ? US_STOCK_DB : []).concat(typeof CRYPTO_DB!=='undefined' ? CRYPTO_DB : []);
+    for (var i=0;i<db.length;i++) if (db[i].t === s.ticker) { nm = db[i].k ? db[i].k.split(' ')[0] : db[i].n; break; }
+  }
   return nm + ' (' + pLabel(s.period) + ')';
 }
+var alertInitialLoad = true; // 앱을 막 열어서 첫 로딩 중인지 (이때 70 이상은 개별 알림 대신 마지막에 요약 1번)
 function sendRsiNotice(icon, title, body, tagKey, type){
   if(typeof Notification!=='undefined'&&Notification.permission==='granted'){
-    try{new Notification(icon+' '+title,{body:body,icon:'apple-touch-icon.png',tag:tagKey});}catch(e){}
+    var opts={body:body,icon:'apple-touch-icon.png',tag:tagKey};
+    // 아이폰(홈 화면 앱)·안드로이드 크롬은 new Notification()이 막혀 있어서 서비스워커로 보내야 실제 알림이 뜸
+    var viaPage=function(){ try{ new Notification(icon+' '+title,opts); }catch(e){} };
+    if(navigator.serviceWorker && navigator.serviceWorker.getRegistration){
+      navigator.serviceWorker.getRegistration().then(function(reg){
+        if(reg && reg.showNotification) reg.showNotification(icon+' '+title,opts).catch(viaPage); else viaPage();
+      }).catch(viaPage);
+    } else viaPage();
   }
   toast(icon,title,body,type,8000);
+}
+// 지금 RSI 70 이상인 감시 종목을 한 번에 알려줌 (앱 열 때·직접 새로고침할 때마다)
+// → 예전에 이미 알림이 지나갔더라도 지금 과열 상태인 종목은 항상 다시 확인 가능
+function showOverSummary(){
+  var hot = stocks.filter(function(s){ return s.rsi!=null && s.rsi>=overThreshold; })
+                  .sort(function(a,b){ return b.rsi-a.rsi; });
+  if(!hot.length) return;
+  var list = hot.slice(0,6).map(function(s){ return alertLabel(s)+' '+s.rsi; }).join(', ') + (hot.length>6 ? ' 외 '+(hot.length-6)+'개' : '');
+  sendRsiNotice('🔥', 'RSI 70 이상 '+hot.length+'개 (과열·고점 주의)', list, 'rsiover-summary', 'info');
 }
 function checkAlert(s){
   if(s.rsi==null) return;
@@ -1808,7 +1830,7 @@ function checkAlert(s){
     if(!prevOver.has(key)){
       prevOver.add(key);
       localStorage.setItem('rsi_prev_over',JSON.stringify(Array.from(prevOver)));
-      sendRsiNotice('🔥', alertLabel(s)+' RSI 과열', 'RSI '+s.rsi+' — '+overThreshold+' 이상 진입! (과매수·고점 주의)', 'rsiover-'+key, 'info');
+      if(!alertInitialLoad) sendRsiNotice('🔥', alertLabel(s)+' RSI 과열', 'RSI '+s.rsi+' — '+overThreshold+' 이상 진입! (과매수·고점 주의)', 'rsiover-'+key, 'info');
     }
   } else if(prevOver.has(key)) {
     prevOver.delete(key);
@@ -2358,16 +2380,16 @@ function divRequiredDisplayLen(data, div){
 }
 
 // ── 카드 렌더 ──
-function rsiColor(v){if(v==null)return 'c-muted';if(v<20)return 'c-danger';if(v<=30)return 'c-warn';if(v<=70)return 'c-ok';return 'c-purple';}
+function rsiColor(v){if(v==null)return 'c-muted';if(v<20)return 'c-danger';if(v<=30)return 'c-warn';if(v<70)return 'c-ok';return 'c-purple';}
 function getBadge(v,err){
   if(err) return '<span class="badge b-err">오류</span>';
   if(v==null) return '<span class="badge b-load"><span class="spin"></span></span>';
   if(v<20)  return '<span class="badge b-alert">풀매수! 🚀</span>';
   if(v<=30) return '<span class="badge b-warn">강력매수! 🔥</span>';
-  if(v<=70) return '<span class="badge b-ok">절대참아! 🧐</span>';
+  if(v<70)  return '<span class="badge b-ok">절대참아! 🧐</span>';
   return '<span class="badge b-high">분할매도! 🥸</span>';
 }
-function cardCls(v){if(v==null)return '';if(v<20)return 's-alert';if(v<=30)return 's-warn';return '';}
+function cardCls(v){if(v==null)return '';if(v<20)return 's-alert';if(v<=30)return 's-warn';if(v>=70)return 's-over';return '';}
 function pLabel(p){return p==='1d'?'일봉':p==='1wk'?'주봉':'월봉';}
 
 function renderCard(s){
@@ -3227,7 +3249,7 @@ function setupAutoRefresh(){
   autoRem=sec; lbl.textContent=autoRem+'초 후 업데이트';
   autoTimer=setInterval(function(){
     autoRem--; lbl.textContent=autoRem+'초 후 업데이트';
-    if(autoRem<=0){autoRem=sec;refreshAll();}
+    if(autoRem<=0){autoRem=sec;refreshAll(true);}
   },1000);
 }
 
@@ -4997,7 +5019,7 @@ function krsearchClose(){
     if (wlInput) { wlInput.value = ''; wlInput.focus(); }
     setWatchlistSearch('');
   });
-  loadStocksConcurrent(stocks, 3);
+  loadStocksConcurrent(stocks, 3, function(){ alertInitialLoad = false; showOverSummary(); });
   setupAutoRefresh();
   // 감시 목록 로딩과 겹치지 않도록 살짝 지연 후 전광판(시총 상위 60종목) 스캔 시작
   setTimeout(scanTickerPool, 4000);
