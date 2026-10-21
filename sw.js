@@ -1,5 +1,5 @@
 // Service Worker for RSI Watch PWA
-const CACHE_NAME = 'rsi-watch-v3';
+const CACHE_NAME = 'rsi-watch-v4';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
@@ -21,7 +21,7 @@ self.addEventListener('fetch', e => {
   var url = e.request.url;
 
   // 야후 프록시 / Firebase(방문자수·채팅) 요청은 캐싱 대상에서 완전히 제외하고 네트워크로만 처리
-  if (url.includes('finance.yahoo') || url.includes('allorigins') || url.includes('corsproxy') || url.includes('firebaseio.com')) {
+  if (url.includes('finance.yahoo') || url.includes('allorigins') || url.includes('corsproxy') || url.includes('firebaseio.com') || url.includes('workers.dev') || url.includes('binance') || url.includes('hyperliquid')) {
     e.respondWith(fetch(e.request).catch(() => new Response('{}', {headers:{'Content-Type':'application/json'}})));
     return;
   }
@@ -37,5 +37,29 @@ self.addEventListener('fetch', e => {
       fetch(e.request, { cache: 'no-store' }).then(res => { cache.put(e.request, res.clone()); return res; })
         .catch(() => caches.match(e.request))
     )
+  );
+});
+
+// ── 앱이 꺼져 있어도 알림 (서버 rsingtime-push 워커가 보낸 푸시를 받아서 표시) ──
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (err) { d = { body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(d.title || 'RSIngTime 알림', {
+    body: d.body || '',
+    icon: 'apple-touch-icon.png',
+    badge: 'apple-touch-icon.png',
+    tag: d.tag || 'rsi',
+    data: { url: './' },
+  }));
+});
+
+// 알림을 누르면 앱 열기 (이미 열려 있으면 그 창으로)
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      for (const c of list) { if ('focus' in c) return c.focus(); }
+      return self.clients.openWindow ? self.clients.openWindow('./') : null;
+    })
   );
 });

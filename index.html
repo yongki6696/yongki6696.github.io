@@ -65,6 +65,10 @@ main { max-width:680px; margin:0 auto; padding:calc(env(safe-area-inset-top) + 8
 .banner { border-radius:12px; padding:11px 14px; margin-bottom:14px; font-size:13px; display:flex; justify-content:space-between; align-items:center; gap:10px; }
 .banner-blue   { background:rgba(37,99,235,.12); border:1px solid rgba(37,99,235,.3); }
 .banner-yellow { background:rgba(245,158,11,.1);  border:1px solid rgba(245,158,11,.25); }
+.banner-push   { background:rgba(167,139,250,.10); border:1px solid rgba(167,139,250,.28); }
+.banner-push.on { background:rgba(34,197,94,.08); border-color:rgba(34,197,94,.28); }
+.banner-push.on .btn-allow { background:transparent; color:var(--muted); border:1px solid var(--border); }
+.push-btns { display:flex; gap:6px; flex-shrink:0; }
 .hidden { display:none !important; }
 
 .stats { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:16px; }
@@ -689,6 +693,10 @@ body.edit-mode .edit-hint { display:block; }
     <span>🔔 RSI 경보 알림을 받으려면 허용해주세요</span>
     <button class="btn-allow" id="btn-notif">허용</button>
   </div>
+  <div class="banner banner-push hidden" id="push-row">
+    <span id="push-text">📲 앱이 꺼져 있어도 RSI 30↓·70↑ 알림 받기</span>
+    <span class="push-btns"><button class="btn-x hidden" id="btn-push-test">테스트</button><button class="btn-allow" id="btn-push">켜기</button></span>
+  </div>
 
   <div class="stats">
     <div class="stat stat-filter active" id="filter-all" data-filter="all"><div class="stat-label"><span class="filter-check"></span>감시 종목</div><div class="stat-big c-white" id="s-total">0</div></div>
@@ -944,6 +952,7 @@ function save() {
   localStorage.setItem('rsi_stocks', JSON.stringify(
     stocks.map(function(s){ return {ticker:s.ticker, period:s.period}; })
   ));
+  if (typeof schedulePushSync === 'function') schedulePushSync(false);   // 앱 꺼져도 알림: 서버 감시 목록도 갱신
 }
 function migrateP(p) {
   return {'1day':'1d','1week':'1wk','1month':'1mo','D':'1d','W':'1wk','M':'1mo'}[p]||p;
@@ -1802,14 +1811,16 @@ function sendRsiNotice(icon, title, body, tagKey, type){
   }
   toast(icon,title,body,type,8000);
 }
-// 지금 RSI 70 이상인 감시 종목을 한 번에 알려줌 (앱 열 때·직접 새로고침할 때마다)
-// → 예전에 이미 알림이 지나갔더라도 지금 과열 상태인 종목은 항상 다시 확인 가능
+// 지금 RSI 30 이하 / 70 이상인 감시 종목을 한 번에 알려줌 (앱 열 때·직접 새로고침할 때마다)
+// → 예전에 이미 알림이 지나갔더라도 지금 해당 구간에 있는 종목은 항상 다시 확인 가능
+function rsiSummaryList(arr){
+  return arr.slice(0,6).map(function(s){ return alertLabel(s)+' '+s.rsi; }).join(', ') + (arr.length>6 ? ' 외 '+(arr.length-6)+'개' : '');
+}
 function showOverSummary(){
-  var hot = stocks.filter(function(s){ return s.rsi!=null && s.rsi>=overThreshold; })
-                  .sort(function(a,b){ return b.rsi-a.rsi; });
-  if(!hot.length) return;
-  var list = hot.slice(0,6).map(function(s){ return alertLabel(s)+' '+s.rsi; }).join(', ') + (hot.length>6 ? ' 외 '+(hot.length-6)+'개' : '');
-  sendRsiNotice('🔥', 'RSI 70 이상 '+hot.length+'개 (과열·고점 주의)', list, 'rsiover-summary', 'info');
+  var low = stocks.filter(function(s){ return s.rsi!=null && s.rsi<=threshold; }).sort(function(a,b){ return a.rsi-b.rsi; });
+  var hot = stocks.filter(function(s){ return s.rsi!=null && s.rsi>=overThreshold; }).sort(function(a,b){ return b.rsi-a.rsi; });
+  if(hot.length) sendRsiNotice('🔥', 'RSI 70 이상 '+hot.length+'개 (과열·고점 주의)', rsiSummaryList(hot), 'rsiover-summary', 'info');
+  if(low.length) sendRsiNotice('🚨', 'RSI 30 이하 '+low.length+'개 (과매도)', rsiSummaryList(low), 'rsilow-summary', 'alert'); // 마지막에 띄워 맨 위에 보이게
 }
 function checkAlert(s){
   if(s.rsi==null) return;
@@ -1819,7 +1830,7 @@ function checkAlert(s){
     if(!prevAlert.has(key)){
       prevAlert.add(key);
       localStorage.setItem('rsi_prev',JSON.stringify(Array.from(prevAlert)));
-      sendRsiNotice('🚨', alertLabel(s)+' RSI 경보', 'RSI '+s.rsi+' — '+threshold+' 이하 진입! (과매도)', 'rsi-'+key, 'alert');
+      if(!alertInitialLoad) sendRsiNotice('🚨', alertLabel(s)+' RSI 경보', 'RSI '+s.rsi+' — '+threshold+' 이하 진입! (과매도)', 'rsi-'+key, 'alert');
     }
   } else if(prevAlert.has(key)) {
     prevAlert.delete(key);
@@ -3279,17 +3290,105 @@ bindBtn('btn-add',addStock);
 bindBtn('btn-refresh',refreshAll);
 bindBtn('btn-edit',toggleEdit);
 bindBtn('btn-notif',requestNotif);
+bindBtn('btn-push',togglePush);
+bindBtn('btn-push-test',testPush);
 bindBtn('btn-pwa-close',function(){document.getElementById('pwa-banner').classList.add('hidden');});
 document.getElementById('inp-ticker').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();addStock();}});
 document.getElementById('inp-interval').addEventListener('change',setupAutoRefresh);
 
 if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('./sw.js').catch(function(){});});}
 
+// ══════════════════════════════════════════
+// 앱이 꺼져 있어도 알림 (웹 푸시) — 서버(rsingtime-push 워커)가 1시간마다 RSI를 확인해서 보내줌
+// ══════════════════════════════════════════
+var PUSH_API = 'https://rsingtime-push.yongki6696.workers.dev';
+function pushSupported(){ return ('serviceWorker' in navigator) && ('PushManager' in window) && (typeof Notification!=='undefined'); }
+function isIOSDevice(){ return /iphone|ipad|ipod/i.test(navigator.userAgent); }
+function isStandalone(){ return (window.navigator.standalone===true) || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches); }
+function pushIsOn(){ try{ return localStorage.getItem('rst_push_on')==='1'; }catch(e){ return false; } }
+function b64uToBytes(s){ var p='='.repeat((4-s.length%4)%4), b=atob((s+p).replace(/-/g,'+').replace(/_/g,'/')), o=new Uint8Array(b.length); for(var i=0;i<b.length;i++) o[i]=b.charCodeAt(i); return o; }
+function pushItems(){ return stocks.map(function(s){ return { t:s.ticker, p:s.period, n:alertLabel(s) }; }); }
+function pushSig(items){ return items.map(function(x){ return x.t+'|'+x.p; }).join(','); }
+function pushPost(path, body){
+  return fetch(PUSH_API+path,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
+    .then(function(r){ return r.json().then(function(j){ if(!r.ok||j.ok===false) throw new Error(j.error||('HTTP '+r.status)); return j; }); });
+}
+function renderPushRow(){
+  var row=document.getElementById('push-row'); if(!row) return;
+  if(!pushSupported() && !(isIOSDevice() && !isStandalone())){ row.classList.add('hidden'); return; }
+  row.classList.remove('hidden');
+  var on = pushIsOn();
+  row.classList.toggle('on', on);
+  document.getElementById('push-text').textContent = on ? '✅ 앱 꺼져도 RSI 알림 받는 중' : '📲 앱이 꺼져 있어도 RSI 30↓·70↑ 알림 받기';
+  document.getElementById('btn-push').textContent = on ? '끄기' : '켜기';
+  document.getElementById('btn-push-test').classList.toggle('hidden', !on);
+}
+function togglePush(){
+  if(pushIsOn()) return disablePush();
+  if(isIOSDevice() && !isStandalone()){
+    toast('📲','홈 화면 앱에서 켜 주세요','아이폰은 공유 → 홈 화면에 추가 → 그 앱을 열고 여기서 켜기를 누르면 돼요','info',9000); return;
+  }
+  if(!pushSupported()){ toast('ℹ️','이 브라우저는 미지원','크롬·사파리(홈 화면 앱)에서 이용해 주세요','info'); return; }
+  var btn=document.getElementById('btn-push'); btn.disabled=true; btn.textContent='설정 중…';
+  Notification.requestPermission().then(function(p){
+    if(p!=='granted') throw new Error('알림 권한이 허용되지 않았어요 (휴대폰 설정에서 허용해 주세요)');
+    document.getElementById('notif-banner').classList.add('hidden');
+    return Promise.all([ navigator.serviceWorker.ready, fetch(PUSH_API+'/vapid').then(function(r){ if(!r.ok) throw new Error('알림 서버 준비 중이에요'); return r.json(); }) ]);
+  }).then(function(res){
+    var reg=res[0], key=res[1].publicKey;
+    return reg.pushManager.getSubscription().then(function(old){
+      return old || reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:b64uToBytes(key) });
+    });
+  }).then(function(sub){
+    var items=pushItems();
+    return pushPost('/subscribe',{ subscription:sub.toJSON(), items:items }).then(function(){
+      try{ localStorage.setItem('rst_push_on','1'); localStorage.setItem('rst_push_sig',pushSig(items)); localStorage.setItem('rst_push_at',String(Date.now())); }catch(e){}
+      toast('✅','앱 꺼져도 알림 켜짐','감시 목록 '+items.length+'종목을 1시간마다 확인해서 RSI 30 이하·70 이상이 되면 알려드려요','ok',7000);
+    });
+  }).catch(function(e){
+    toast('⚠️','알림 켜기 실패',(e&&e.message)||'잠시 후 다시 시도해 주세요','alert',7000);
+  }).then(function(){ btn.disabled=false; renderPushRow(); });
+}
+function disablePush(){
+  var done=function(){ try{ localStorage.removeItem('rst_push_on'); localStorage.removeItem('rst_push_sig'); }catch(e){} renderPushRow(); toast('🔕','앱 꺼져도 알림 꺼짐','앱을 켜 두었을 때 알림은 그대로 와요','info'); };
+  navigator.serviceWorker.ready.then(function(reg){ return reg.pushManager.getSubscription(); }).then(function(sub){
+    if(!sub) return;
+    var ep=sub.endpoint;
+    return sub.unsubscribe().catch(function(){}).then(function(){ return pushPost('/unsubscribe',{ endpoint:ep }).catch(function(){}); });
+  }).catch(function(){}).then(done);
+}
+function testPush(){
+  navigator.serviceWorker.ready.then(function(reg){ return reg.pushManager.getSubscription(); }).then(function(sub){
+    if(!sub) throw new Error('구독 정보가 없어요. 끄기 → 켜기를 다시 눌러 주세요');
+    return pushPost('/test',{ endpoint:sub.endpoint });
+  }).then(function(){ toast('📨','테스트 알림 보냄','몇 초 안에 휴대폰 알림이 와야 정상이에요 (앱을 닫아 두고 확인해 보세요)','ok',7000); })
+    .catch(function(e){ toast('⚠️','테스트 실패',(e&&e.message)||'잠시 후 다시 시도','alert'); });
+}
+// 감시 목록이 바뀌면 서버에도 반영 (2초 모아서 1번), 하루 지나면 한 번 더 갱신
+var _pushSyncTimer=null;
+function schedulePushSync(force){
+  if(!pushIsOn() || !pushSupported()) return;
+  clearTimeout(_pushSyncTimer);
+  _pushSyncTimer=setTimeout(function(){
+    var items=pushItems(), sig=pushSig(items), lastSig='', lastAt=0;
+    try{ lastSig=localStorage.getItem('rst_push_sig')||''; lastAt=+localStorage.getItem('rst_push_at')||0; }catch(e){}
+    if(!force && sig===lastSig && Date.now()-lastAt < 24*3600*1000) return;
+    navigator.serviceWorker.ready.then(function(reg){ return reg.pushManager.getSubscription(); }).then(function(sub){
+      if(!sub){ try{ localStorage.removeItem('rst_push_on'); }catch(e){} renderPushRow(); return; }   // 휴대폰 설정에서 알림을 끈 경우
+      return pushPost('/subscribe',{ subscription:sub.toJSON(), items:items }).then(function(){
+        try{ localStorage.setItem('rst_push_sig',sig); localStorage.setItem('rst_push_at',String(Date.now())); }catch(e){}
+      });
+    }).catch(function(){});
+  }, 2000);
+}
+
 function checkBanners(){
   var isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
   var isSA=(window.navigator.standalone===true)||window.matchMedia('(display-mode: standalone)').matches;
   if(isIOS&&!isSA) document.getElementById('pwa-banner').classList.remove('hidden');
   if(typeof Notification!=='undefined'&&Notification.permission==='default') document.getElementById('notif-banner').classList.remove('hidden');
+  renderPushRow();
+  schedulePushSync(false);
 }
 
 // ── 초기화 ──
