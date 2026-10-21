@@ -71,7 +71,12 @@ main { max-width:680px; margin:0 auto; padding:calc(env(safe-area-inset-top) + 8
 .push-btns { display:flex; gap:6px; flex-shrink:0; }
 .hidden { display:none !important; }
 
-.stats { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:16px; }
+.stats { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px; }
+.stat-filter.active.f-low  { background:rgba(239,68,68,.10);  border-color:#ef4444; }
+.stat-filter.active.f-low  .filter-check { background:#ef4444; border-color:#ef4444; }
+.stat-filter.active.f-over { background:rgba(167,139,250,.12); border-color:#a78bfa; }
+.stat-filter.active.f-over .filter-check { background:#a78bfa; border-color:#a78bfa; }
+.c-over { color:#a78bfa; }
 .stat { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px 16px; }
 .stat-filter { cursor:pointer; touch-action:manipulation; -webkit-tap-highlight-color:transparent; transition:background .15s, border-color .15s; }
 .stat-filter:active { background:#1d1d1d; }
@@ -700,8 +705,9 @@ body.edit-mode .edit-hint { display:block; }
 
   <div class="stats">
     <div class="stat stat-filter active" id="filter-all" data-filter="all"><div class="stat-label"><span class="filter-check"></span>감시 종목</div><div class="stat-big c-white" id="s-total">0</div></div>
-    <div class="stat stat-filter" id="filter-alert" data-filter="alert"><div class="stat-label"><span class="filter-check"></span>RSI 경보</div><div class="stat-big c-danger" id="s-alert">0</div></div>
-    <div class="stat" style="grid-column:span 2"><div class="stat-label">마지막 업데이트</div><div class="stat-sm c-muted" id="s-lastup" style="padding-top:4px">—</div></div>
+    <div class="stat stat-filter f-low" id="filter-alert" data-filter="alert"><div class="stat-label"><span class="filter-check"></span>RSI 30↓</div><div class="stat-big c-danger" id="s-alert">0</div></div>
+    <div class="stat stat-filter f-over" id="filter-over" data-filter="over"><div class="stat-label"><span class="filter-check"></span>RSI 70↑</div><div class="stat-big c-over" id="s-over">0</div></div>
+    <div class="stat" style="grid-column:1 / -1"><div class="stat-label">마지막 업데이트</div><div class="stat-sm c-muted" id="s-lastup" style="padding-top:4px">—</div></div>
   </div>
 
   <div class="panel">
@@ -824,7 +830,7 @@ body.edit-mode .edit-hint { display:block; }
     <p class="guide-p">
       <b>2. RSI 경보</b> — 감시 중인 종목의 RSI가 30 이하로 내려오면 자동으로 경보 배지가 뜹니다. RSI가 70 이상으로 올라가면 과열(고점 주의) 알림도 한 번 울립니다.
       브라우저 알림을 허용해두면 화면을 보고 있지 않아도 알림을 받을 수 있고,
-      "감시 종목 / RSI 경보" 필터를 이용하면 전체 목록 중 지금 경보가 뜬 종목만 골라볼 수도 있습니다.
+      "감시 종목 / RSI 30↓ / RSI 70↑" 칸을 누르면 전체 목록 중 30 이하 또는 70 이상인 종목만 골라볼 수 있습니다.
       차트에는 과거에 RSI가 30 이하였던 지점이 ▲ 매수 마커로 표시되어 매수 타이밍을 한눈에 확인할 수 있습니다.
     </p>
     <p class="guide-p">
@@ -2500,6 +2506,7 @@ function stockHaystack(s){
 
 function stockMatchesFilter(s){
   if (cardFilter === 'alert' && !(s.rsi != null && s.rsi <= threshold)) return false;
+  if (cardFilter === 'over' && !(s.rsi != null && s.rsi >= overThreshold)) return false;   // RSI 70 이상(과열)만
   if (wlSearchQuery) {
     var h = stockHaystack(s);
     // 일반 검색 또는 초성 검색(예: "ㅅㅅㅈㅈ" → 삼성전자) 중 하나라도 걸리면 표시
@@ -2542,7 +2549,7 @@ function updateEmptyState(){
         descEl.textContent = '감시 목록에 해당하는 종목이 없습니다';
       } else {
         titleEl.textContent = '조건에 맞는 종목이 없어요';
-        descEl.textContent = '지금은 RSI 경보가 뜬 종목이 없습니다';
+        descEl.textContent = cardFilter === 'over' ? '지금은 RSI 70 이상인 종목이 없습니다' : '지금은 RSI 30 이하인 종목이 없습니다';
       }
     }
   } else {
@@ -2557,6 +2564,8 @@ function setCardFilter(f){
   var alertBox = document.getElementById('filter-alert');
   if (allBox) allBox.classList.toggle('active', f === 'all');
   if (alertBox) alertBox.classList.toggle('active', f === 'alert');
+  var overBox = document.getElementById('filter-over');
+  if (overBox) overBox.classList.toggle('active', f === 'over');
   stocks.forEach(applyCardFilter);
   updateEmptyState();
 }
@@ -2580,6 +2589,8 @@ function updateStats(){
   document.getElementById('s-total').textContent=stocks.length;
   var n=stocks.filter(function(s){return s.rsi!=null&&s.rsi<=threshold;}).length;
   document.getElementById('s-alert').textContent=n;
+  var so=document.getElementById('s-over');
+  if(so) so.textContent=stocks.filter(function(s){return s.rsi!=null&&s.rsi>=overThreshold;}).length;
   var b=document.getElementById('alert-badge');
   b.textContent=n; b.style.display=n>0?'inline-block':'none';
 }
@@ -5121,6 +5132,8 @@ function krsearchClose(){
   var filterAlertBox = document.getElementById('filter-alert');
   if (filterAllBox) filterAllBox.addEventListener('click', function(){ setCardFilter('all'); });
   if (filterAlertBox) filterAlertBox.addEventListener('click', function(){ setCardFilter('alert'); });
+  var filterOverBox = document.getElementById('filter-over');
+  if (filterOverBox) filterOverBox.addEventListener('click', function(){ setCardFilter('over'); });
   // 감시 목록 내 검색
   var wlInput = document.getElementById('wlsearch-input');
   var wlClear = document.getElementById('wlsearch-clear');
