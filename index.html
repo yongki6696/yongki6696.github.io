@@ -2968,6 +2968,17 @@ function toggleEdit(){
     if (typeof toast === 'function') toast('💬', escapeHTML(m.n), escapeHTML(preview), 'info', 5000, scrollToChat);
   }
 
+  // 한 번에 여러 개가 들어오면 (앱을 내려뒀다가 다시 열었을 때 등) 알림을 하나로 묶어서 표시
+  function notifyNewMsgs(list){
+    var others = list.filter(function(m){ return m && m.n && m.n !== getNick(); });
+    if (!others.length) return;
+    if (others.length <= 2) { others.forEach(notifyNewMsg); return; }
+    var last = others[others.length-1];
+    var preview = last.img ? '사진 📷' : (last.m || '');
+    if (preview.length > 30) preview = preview.slice(0,30) + '…';
+    if (typeof toast === 'function') toast('💬', '새 메시지 '+others.length+'개', '마지막: '+escapeHTML(last.n)+' · '+escapeHTML(preview), 'info', 6000, scrollToChat);
+  }
+
   // 알림 탭 시 채팅창까지 스크롤 (고정 헤더에 가리지 않도록 헤더 높이만큼 보정)
   function scrollToChat(){
     var chatBox = document.querySelector('.chat-box');
@@ -2981,7 +2992,10 @@ function toggleEdit(){
   // 최초 1회만 최근 50개를 통째로 받고, 그 이후엔 마지막으로 받은 키 이후의
   // '새 메시지'만 증분으로 가져옴 — 사진이 쌓여도 매 폴링마다 전체를 다시
   // 내려받지 않아서 데이터 사용량과 처리 부담이 커지지 않음
+  var loadingMsgs = false;   // 확인이 겹쳐서 두 번 돌면 같은 메시지 알림이 중복되므로 한 번에 하나만
   function loadMsgs(){
+    if (loadingMsgs) return;
+    loadingMsgs = true;
     var url = lastKey
       ? FB+'/chat/messages.json?orderBy="$key"&startAt="'+encodeURIComponent(lastKey)+'"'
       : FB+'/chat/messages.json?orderBy="$key"&limitToLast=50';
@@ -2993,7 +3007,7 @@ function toggleEdit(){
       var added = false;
       var freshMsgs = [];
       keys.forEach(function(k){
-        if (k === lastKey) return; // startAt은 해당 키를 포함해서 돌려주므로 중복 제외
+        if (k === lastKey || msgCache[k]) return; // startAt은 해당 키를 포함 + 이미 받은 메시지는 다시 알리지 않음
         msgCache[k] = obj[k];
         added = true;
         if (!isFirstLoad) freshMsgs.push(obj[k]);
@@ -3011,10 +3025,10 @@ function toggleEdit(){
         var latestKey = sortedIncoming[sortedIncoming.length-1];
         if (latestKey) notifyNewMsg(obj[latestKey]);
       } else {
-        freshMsgs.forEach(notifyNewMsg);
+        notifyNewMsgs(freshMsgs);
       }
       isFirstLoad = false;
-    }).catch(function(){});
+    }).catch(function(){}).then(function(){ loadingMsgs = false; });
   }
 
   var sending = false;
