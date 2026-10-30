@@ -229,6 +229,8 @@ body.edit-mode .card { cursor:default; }
 .card-body { display:flex; align-items:flex-end; justify-content:space-between; margin-bottom:14px; }
 .price-main { font-size:24px; font-weight:700; letter-spacing:-.3px; }
 .price-chg  { font-size:12px; margin-top:3px; }
+.price-ext  { font-size:11.5px; margin-top:3px; color:var(--text2); white-space:nowrap; }   /* 미국 주식 장전·장후 가격 */
+.price-ext b { font-weight:700; color:var(--text); }
 .rsi-label-sm { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin-bottom:3px; text-align:right; }
 .rsi-big { font-size:36px; font-weight:700; line-height:1; text-align:right; }
 .card-foot { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); border-top:1px solid var(--border); padding-top:10px; }
@@ -1533,6 +1535,7 @@ function loadStock(s){
     s.rsi=calcRSI(valid);
     s.name=(meta.longName||meta.shortName)||'';
     s.currency=meta.currency||null;   // 해외 거래소(영국 GBp 등) 통화 표시용
+    s.tradingPeriod=meta.currentTradingPeriod||null;   // 장전·정규장·장후 시간 (미국 주식 장전·장후 가격용)
     // 고점대비(MDD)는 차트 표시 범위(최근 180개)가 아니라 최근 5년치 전체 데이터 기준 최고가로 계산
     s.allTimeHigh = valid.length ? Math.max.apply(null, valid) : null;
     // 화면 표시는 180일이지만, MA120(120일 이동평균)이 표시 구간 처음부터 끝까지 다 그려지려면
@@ -1551,7 +1554,32 @@ function loadStock(s){
     // 접미사 없는 티커를 못 찾으면: 해외 거래소 종목일 수 있으니 접미사 안내 (예: 영국 BLC3 → BLC3.L)
     if (/^[A-Z0-9]{1,6}$/.test(s.ticker) && /데이터 로드 실패|데이터 없음|존재하지 않는/.test(e.message||'')) s.error='못 찾음 · 해외는 .L(영국) 등 붙이기';
   })
-  .then(function(){ renderCard(s); applyCardFilter(s); checkAlert(s); updateStats(); updateEmptyState(); });
+  .then(function(){ renderCard(s); applyCardFilter(s); checkAlert(s); updateStats(); updateEmptyState(); loadExtendedHours(s); });
+}
+
+// ══════════════════════════════════════════
+// 미국 주식 장전(프리마켓)·장후(애프터마켓) 가격
+// RSI·차트는 정규장 종가 기준 그대로 두고, 가격 아래에 한 줄로만 표시
+// 정규장 중에는 추가 요청 없음 / 장 마감 후~다음 날 프리마켓 전까지는 애프터 가격, 프리마켓 시간엔 프리 가격
+// ══════════════════════════════════════════
+function isUSStockTicker(t){ return /^[A-Z]{1,5}(-[A-Z])?$/.test(t || ''); }
+function loadExtendedHours(s){
+  if (s.error || !isUSStockTicker(s.ticker) || (s.currency && s.currency !== 'USD')) { s.ext = null; return; }
+  var tp = s.tradingPeriod, nowS = Date.now()/1000;
+  if (tp && tp.regular && nowS >= tp.regular.start && nowS < tp.regular.end) { if (s.ext) { s.ext = null; renderCard(s); } return; }  // 정규장 중
+  var url = 'https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(s.ticker)+'?interval=5m&range=1d&includePrePost=true&t='+Date.now();
+  fetchYahooUrl(url).then(function(d){
+    var r = d.chart.result[0], m = r.meta || {}, p = m.currentTradingPeriod || {}, ts = r.timestamp || [], cl = (r.indicators.quote[0] || {}).close || [];
+    var now = Date.now()/1000, type = null, from = 0, to = Infinity;
+    if (p.pre && now >= p.pre.start && now < p.pre.end) { type = 'pre'; from = p.pre.start; to = p.pre.end; }
+    else if (p.regular && now >= p.regular.start && now < p.regular.end) { type = null; }
+    else if (p.post) { type = 'post'; from = p.post.start; to = p.post.end; }
+    var price = null, at = null;
+    if (type) for (var i = ts.length-1; i >= 0; i--) { if (ts[i] >= from && ts[i] < to && cl[i] != null) { price = cl[i]; at = ts[i]; break; } }
+    var base = m.regularMarketPrice;   // 프리: 전날 종가 / 애프터: 오늘 정규장 종가
+    s.ext = (type && price != null && base) ? { type: type, price: price, chg: (price - base) / base * 100, at: at } : null;
+    renderCard(s);
+  }).catch(function(){ /* 장전·장후 가격은 부가 정보라 실패해도 조용히 넘어감 */ });
 }
 // 목록을 동시에 최대 N개씩 병렬로 로딩 (완전 동시도 아니고 완전 순차도 아닌 절충안)
 function loadStocksConcurrent(list, concurrency, onDone){
@@ -2420,7 +2448,13 @@ function renderCard(s){
   var chg=(s.price&&s.prevClose)?((s.price-s.prevClose)/s.prevClose*100).toFixed(2):null;
   var isUp=chg&&parseFloat(chg)>=0;
   var chgHTML=chg?'<div class="price-chg '+(isUp?'c-ok':'c-danger')+'">'+(isUp?'▲+':'▼')+chg+'%</div>':'';
-  var priceHTML=s.price?'<div class="price-main">'+krsearchFormatPrice(s.ticker, s.price, s.currency)+'</div>'+chgHTML:(s.loading?'<div class="price-main"><span class="spin"></span></div>':'<div class="price-main c-muted">—</div>');
+  var extHTML='';
+  if(s.ext){
+    var eUp=s.ext.chg>=0;
+    extHTML='<div class="price-ext">'+(s.ext.type==='pre'?'🌅 프리 ':'🌙 애프터 ')+'<b>'+krsearchFormatPrice(s.ticker, s.ext.price, s.currency)+'</b> '
+      +'<span class="'+(eUp?'c-ok':'c-danger')+'">'+(eUp?'+':'')+s.ext.chg.toFixed(2)+'%</span></div>';
+  }
+  var priceHTML=s.price?'<div class="price-main">'+krsearchFormatPrice(s.ticker, s.price, s.currency)+'</div>'+chgHTML+extHTML:(s.loading?'<div class="price-main"><span class="spin"></span></div>':'<div class="price-main c-muted">—</div>');
   var rsiHTML=v!=null?'<div class="rsi-big '+rsiColor(v)+'">'+v+'</div>':(s.loading?'<div class="rsi-big"><span class="spin"></span></div>':'<div class="rsi-big c-muted">—</div>');
   var timeStr=s.lastUp?'🕐 '+s.lastUp.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'';
   var footRight=s.error?'<span class="c-danger">⚠ '+s.error+'</span>':timeStr;
