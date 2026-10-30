@@ -1569,14 +1569,24 @@ function loadExtendedHours(s){
   if (tp && tp.regular && nowS >= tp.regular.start && nowS < tp.regular.end) { if (s.ext) { s.ext = null; renderCard(s); } return; }  // 정규장 중
   var url = 'https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(s.ticker)+'?interval=5m&range=1d&includePrePost=true&t='+Date.now();
   fetchYahooUrl(url).then(function(d){
-    var r = d.chart.result[0], m = r.meta || {}, p = m.currentTradingPeriod || {}, ts = r.timestamp || [], cl = (r.indicators.quote[0] || {}).close || [];
-    var now = Date.now()/1000, type = null, from = 0, to = Infinity;
-    if (p.pre && now >= p.pre.start && now < p.pre.end) { type = 'pre'; from = p.pre.start; to = p.pre.end; }
-    else if (p.regular && now >= p.regular.start && now < p.regular.end) { type = null; }
-    else if (p.post) { type = 'post'; from = p.post.start; to = p.post.end; }
+    var r = d.chart.result[0], m = r.meta || {}, ts = r.timestamp || [], cl = (r.indicators.quote[0] || {}).close || [];
+    var now = Date.now()/1000, cur = m.currentTradingPeriod || {};
+    if (cur.regular && now >= cur.regular.start && now < cur.regular.end) { s.ext = null; renderCard(s); return; }   // 정규장 중
+    // 마지막 가격이 찍힌 '그날'의 장전·정규장·장후 시간표로 판단
+    // (미국 자정이 지나면 currentTradingPeriod는 다음 날로 넘어가는데 데이터는 전날 것이라, currentTradingPeriod로는 못 찾음)
+    function flat(x){ var out=[]; (x||[]).forEach(function(a){ (Array.isArray(a)?a:[a]).forEach(function(p){ if(p&&p.start!=null) out.push(p); }); }); return out; }
+    var tp = m.tradingPeriods || {}, pre = flat(tp.pre), post = flat(tp.post), reg = flat(tp.regular);
+    if (!pre.length && !post.length && !reg.length) { pre = flat([cur.pre]); post = flat([cur.post]); reg = flat([cur.regular]); }   // 시간표가 없으면 현재 시간표로
     var price = null, at = null;
-    if (type) for (var i = ts.length-1; i >= 0; i--) { if (ts[i] >= from && ts[i] < to && cl[i] != null) { price = cl[i]; at = ts[i]; break; } }
-    var base = m.regularMarketPrice;   // 프리: 전날 종가 / 애프터: 오늘 정규장 종가
+    for (var i = ts.length-1; i >= 0; i--) { if (cl[i] != null) { price = cl[i]; at = ts[i]; break; } }
+    var within = function(list, t){ return list.some(function(p){ return t >= p.start && t <= p.end; }); };
+    var type = null;
+    if (at != null) {
+      if (within(pre, at)) type = 'pre';
+      else if (within(post, at)) type = 'post';
+      else if (!within(reg, at) && m.regularMarketTime && at > m.regularMarketTime) type = 'post';   // 시간표가 없을 때 대비
+    }
+    var base = m.regularMarketPrice;   // 프리: 전날 종가 / 애프터: 그날 정규장 종가
     s.ext = (type && price != null && base) ? { type: type, price: price, chg: (price - base) / base * 100, at: at } : null;
     renderCard(s);
   }).catch(function(){ /* 장전·장후 가격은 부가 정보라 실패해도 조용히 넘어감 */ });
