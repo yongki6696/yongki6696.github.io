@@ -833,7 +833,7 @@ body.edit-mode .edit-hint { display:block; }
       <b>2. RSI 경보</b> — 감시 중인 종목의 RSI가 30 이하로 내려오면 자동으로 경보 배지가 뜹니다. RSI가 70 이상으로 올라가면 과열(고점 주의) 알림도 한 번 울립니다.
       브라우저 알림을 허용해두면 화면을 보고 있지 않아도 알림을 받을 수 있고,
       "감시 종목 / RSI 30↓ / RSI 70↑" 칸을 누르면 전체 목록 중 30 이하 또는 70 이상인 종목만 골라볼 수 있습니다.
-      차트에는 과거에 RSI가 30 이하였던 지점이 ▲ 매수 마커로 표시되어 매수 타이밍을 한눈에 확인할 수 있습니다.
+      차트에는 과거에 RSI가 30 이하였던 지점이 ▲ 매수 마커로 표시되어 매수 타이밍을 한눈에 확인할 수 있습니다. 꽉 찬 ▲는 종가 기준 30 이하로 마감한 날, 속이 빈 △는 장중에만 30 아래를 찍고 종가는 30 위에서 마감한 날입니다.
     </p>
     <p class="guide-p">
       <b>3. 자동 새로고침</b> — 1분부터 30분까지 원하는 간격으로 감시 목록을 자동 갱신하도록 설정할 수 있습니다.
@@ -1166,7 +1166,8 @@ function cryptoToYahooShape(ticker, rows, source){
             regularMarketPrice: last, longName: entry ? entry.n : cryptoBase(ticker),
             dataSource: source },
     timestamp: rows.map(function(r){ return Math.floor(r.t/1000); }),
-    indicators: { quote: [ { close: rows.map(function(r){ return r.c; }) } ] }
+    indicators: { quote: [ { close: rows.map(function(r){ return r.c; }),
+                             low:   rows.map(function(r){ return (r.l!=null && isFinite(r.l)) ? r.l : r.c; }) } ] }
   }] } };
 }
 
@@ -1206,8 +1207,8 @@ function fetchBinance(ticker, period){
     var seen = {}, rows = [];
     parts.forEach(function(arr){
       arr.forEach(function(k){
-        var t = +k[0], c = parseFloat(k[4]);
-        if (!seen[t] && isFinite(c)) { seen[t] = 1; rows.push({ t:t, c:c }); }
+        var t = +k[0], c = parseFloat(k[4]), l = parseFloat(k[3]);   // k[3]=저가 (장중 RSI 30 터치 판정용)
+        if (!seen[t] && isFinite(c)) { seen[t] = 1; rows.push({ t:t, c:c, l:l }); }
       });
     });
     rows.sort(function(a,b){ return a.t-b.t; });
@@ -1230,7 +1231,7 @@ function hlFetchRows(coin, div, period){
   }).then(function(arr){
     if (!Array.isArray(arr)) throw new Error('응답 오류');
     if (!arr.length) throw new Error('없는 종목');
-    return arr.map(function(k){ return { t:+k.t, c:parseFloat(k.c)/div }; })
+    return arr.map(function(k){ return { t:+k.t, c:parseFloat(k.c)/div, l:parseFloat(k.l)/div }; })
               .filter(function(r){ return isFinite(r.c); })
               .sort(function(a,b){ return a.t-b.t; });
   });
@@ -1344,6 +1345,23 @@ function calcRSISeries(closes){
     var d=arr[i]-arr[i-1];
     ag=(ag*(p-1)+(d>0?d:0))/p; al=(al*(p-1)+(d<0?-d:0))/p;
     series.push(al===0?100:Math.round((100-100/(1+ag/al))*100)/100);
+  }
+  return series;
+}
+// 장중 최저 RSI: 각 봉에서 '가격이 그날 저가까지 내려갔을 때'의 RSI (calcRSISeries와 같은 위치·같은 계산식)
+// → 종가 기준으로는 30 위에서 마감했지만 장중에 30 아래를 찍었던 날을 찾을 수 있음
+function calcRSILowSeries(closes, lows){
+  var p=14; if(!lows||closes.length<p+1||lows.length!==closes.length) return [];
+  var g=0,l=0;
+  for(var i=1;i<=p;i++){var d=closes[i]-closes[i-1];if(d>0)g+=d;else l-=d;}
+  var ag=g/p,al=l/p,series=[];
+  for(var i=p+1;i<closes.length;i++){
+    var lo=(lows[i]!=null&&lows[i]>0)?Math.min(lows[i],closes[i]):closes[i];
+    var dl=lo-closes[i-1];
+    var agL=(ag*(p-1)+(dl>0?dl:0))/p, alL=(al*(p-1)+(dl<0?-dl:0))/p;
+    series.push(alL===0?100:Math.round((100-100/(1+agL/alL))*100)/100);
+    var d=closes[i]-closes[i-1];
+    ag=(ag*(p-1)+(d>0?d:0))/p; al=(al*(p-1)+(d<0?-d:0))/p;
   }
   return series;
 }
@@ -1545,6 +1563,13 @@ function loadStock(s){
     // 기존 chartData(300개)는 RSI·고점주의·다이버전스 계산에 그대로 쓰고, 선 그리기용 긴 데이터만 따로 보관
     s.ma50wLen = (s.period==='1d') ? ((isCryptoTicker(s.ticker)||isHLTicker(s.ticker)) ? 350 : 250) : 0;
     s.chartDataLong = s.ma50wLen ? valid.slice(-(300 + s.ma50wLen)) : null;
+    // 장중 저가 (차트 매수 마커용): 종가로는 RSI 30 위에서 마감했어도 장중에 30 아래로 찍은 날을 표시하기 위함
+    var lowsArr = chart.indicators.quote[0].low || null;
+    s.chartLow = validIdx.slice(-300).map(function(idx, j){
+      var lv = lowsArr ? lowsArr[idx] : null, cv = s.chartData[j];
+      if (lv == null || !(lv > 0)) return cv;
+      return Math.min(lv, cv);
+    });
     s.timestamps=validIdx.slice(-300).map(function(idx){ return timestamps[idx]!=null?timestamps[idx]:timestamps[timestamps.length-1]; });
     s.loading=false; s.error=null; s.lastUp=new Date();
     renderLastUpdate(s.lastUp);
@@ -2009,7 +2034,7 @@ function makeDivMarkers(data, div, displayLen){
 // ── RSI 과매도/과매수 구간 = 매수/매도 시점 표시 (미니차트 위 마커) ──
 // 과매도(RSI≤30)·과매수(RSI≥70)가 며칠 연속 이어지면 하나의 구간으로 묶고,
 // 매수는 그 구간 최저가, 매도는 최고가 지점에 마커를 찍음
-function makeOversoldMarkers(data, displayLen){
+function makeOversoldMarkers(data, displayLen, lows){
   if(!data||data.length<20) return '';
   displayLen = displayLen || Math.min(180, data.length);
   var dataStartIdx=data.length-displayLen;
@@ -2021,6 +2046,8 @@ function makeOversoldMarkers(data, displayLen){
 
   var rsiSeries=calcRSISeries(data);
   var OFFSET=15; // calcRSISeries는 data[15]부터 값을 반환함
+  // 장중 최저 RSI (저가 데이터가 있을 때만). 종가 RSI와 같은 위치(data[15]부터)
+  var rsiLowSeries=(lows&&lows.length===data.length&&data.every(function(v){return v!=null;}))?calcRSILowSeries(data,lows):[];
 
   // 연속된 구간을 하나로 묶음 (test: 해당 RSI가 구간 조건에 해당하는지)
   function buildZones(test){
@@ -2037,15 +2064,35 @@ function makeOversoldMarkers(data, displayLen){
 
   var marks='';
   // 매수: 과매도 구간의 최저가 지점, 차트 아래쪽이므로 마커를 위로 향하게(▲) 그 위에 배치
-  buildZones(function(v){ return v<=30; }).forEach(function(z){
-    var idx=z.start, val=data[z.start];
-    for(var i=z.start;i<=z.end;i++){ if(data[i]!=null&&data[i]<val){ val=data[i]; idx=i; } }
+  // · 꽉 찬 ▲ = 종가 기준 RSI 30 이하로 마감한 구간
+  // · 속이 빈 △ = 종가는 30 위에서 마감했지만 장중 저가에서 RSI 30 이하를 찍은 구간
+  function closeOS(k){ return rsiSeries[k]<=30; }
+  function lowOS(k){ return rsiLowSeries.length ? rsiLowSeries[k]<=30 : false; }
+  var osZones=[], cur=null;
+  for(var k=0;k<rsiSeries.length;k++){
+    var di=k+OFFSET, c=closeOS(k), t=c||lowOS(k);
+    if(t){ if(!cur) cur={start:di,end:di,close:c}; else { cur.end=di; if(c) cur.close=true; } }
+    else if(cur){ osZones.push(cur); cur=null; }
+  }
+  if(cur) osZones.push(cur);
+  osZones.forEach(function(z){
+    var idx=z.start, low=Infinity;
+    for(var i=z.start;i<=z.end;i++){
+      var lv=(lows&&lows[i]!=null)?lows[i]:data[i];
+      if(lv!=null&&lv<low){ low=lv; idx=i; }
+    }
     var rel=idx-dataStartIdx;
     if(rel<0||rel>=displayLen) return;
-    var x=tx(rel), y=ty(val);
+    var x=tx(rel), y=ty(data[idx]);   // 차트 선은 종가라서 마커도 그 봉의 종가 위치에
     var base=Math.max(14, y-4);
-    marks+='<path d="M'+(x-3.5).toFixed(1)+','+base.toFixed(1)+' L'+(x+3.5).toFixed(1)+','+base.toFixed(1)+' L'+x.toFixed(1)+','+(base-5).toFixed(1)+' Z" fill="#4ade80" stroke="#000" stroke-width="0.6"/>';
-    marks+='<text x="'+x.toFixed(1)+'" y="'+(base-7).toFixed(1)+'" font-size="6.5" fill="#4ade80" text-anchor="middle" font-weight="700">매수</text>';
+    var tri='M'+(x-3.5).toFixed(1)+','+base.toFixed(1)+' L'+(x+3.5).toFixed(1)+','+base.toFixed(1)+' L'+x.toFixed(1)+','+(base-5).toFixed(1)+' Z';
+    if(z.close){
+      marks+='<path d="'+tri+'" fill="#4ade80" stroke="#000" stroke-width="0.6"/>';
+      marks+='<text x="'+x.toFixed(1)+'" y="'+(base-7).toFixed(1)+'" font-size="6.5" fill="#4ade80" text-anchor="middle" font-weight="700">매수</text>';
+    } else {
+      marks+='<path d="'+tri+'" fill="#000" fill-opacity="0.5" stroke="#4ade80" stroke-width="0.9"/>';
+      marks+='<text x="'+x.toFixed(1)+'" y="'+(base-7).toFixed(1)+'" font-size="6" fill="#4ade80" fill-opacity="0.8" text-anchor="middle" font-weight="700">매수</text>';
+    }
   });
 
   // ── 부분매도 신호 ──
@@ -2482,7 +2529,7 @@ function renderCard(s){
   // 다이버전스 지점이 기본 180일(6개월) 범위 밖이면 차트 표시 범위를 자동으로 넓혀서 마커가 항상 보이게 함
   var chartDisplayLen = divResult ? divRequiredDisplayLen(s.chartData, divResult) : Math.min(180, s.chartData?s.chartData.length:180);
   var divMarkerHTML = divResult ? makeDivMarkers(s.chartData, divResult, chartDisplayLen) : '';
-  var oversoldMarkerHTML = s.chartData ? makeOversoldMarkers(s.chartData, chartDisplayLen) : '';
+  var oversoldMarkerHTML = s.chartData ? makeOversoldMarkers(s.chartData, chartDisplayLen, s.chartLow) : '';
   var chartHTML = s.chartData
     ? (legendHTML + '<div style="position:relative">' + makeMiniChart(s.chartData,chartColor,chartDisplayLen,s.chartDataLong,longMALines(s)) + oversoldMarkerHTML + divMarkerHTML + '</div>')
     : '';
