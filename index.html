@@ -1640,28 +1640,30 @@ function loadStocksConcurrent(list, concurrency, onDone){
 // (검색DB 전체 3천여개를 스캔하는 건 무료 프록시로는 사실상 불가능해서 후보군을 제한함)
 // ══════════════════════════════════════════
 var TICKER_POOL = [
-  // 코스피 시가총액 상위 30 (2026.10.01 기준, 보통주만) — 한미반도체 신규 진입, 고려아연 30위 밖으로
+  // 코스피 시가총액 상위 30 (2026.11.05 종가 기준, 보통주만) — 메리츠금융지주·HMM·고려아연·KT&G·한국전력 신규 진입,
+  // LS ELECTRIC·효성중공업·한미반도체·HD현대일렉트릭·한화오션 30위 밖으로
   {n:'삼성전자',t:'005930.KS'},{n:'SK하이닉스',t:'000660.KS'},{n:'SK스퀘어',t:'402340.KS'},
-  {n:'삼성전기',t:'009150.KS'},{n:'LG에너지솔루션',t:'373220.KS'},{n:'현대차',t:'005380.KS'},
-  {n:'삼성바이오로직스',t:'207940.KS'},{n:'KB금융',t:'105560.KS'},{n:'삼성생명',t:'032830.KS'},
-  {n:'삼성물산',t:'028260.KS'},{n:'한화에어로스페이스',t:'012450.KS'},{n:'두산에너빌리티',t:'034020.KS'},
-  {n:'신한지주',t:'055550.KS'},{n:'HD현대중공업',t:'329180.KS'},{n:'기아',t:'000270.KS'},
-  {n:'셀트리온',t:'068270.KS'},{n:'SK',t:'034730.KS'},{n:'삼성SDI',t:'006400.KS'},
-  {n:'하나금융지주',t:'086790.KS'},{n:'LG전자',t:'066570.KS'},{n:'현대모비스',t:'012330.KS'},
-  {n:'LS ELECTRIC',t:'010120.KS'},{n:'NAVER',t:'035420.KS'},{n:'삼성화재',t:'000810.KS'},
-  {n:'효성중공업',t:'298040.KS'},{n:'한미반도체',t:'042700.KS'},{n:'우리금융지주',t:'316140.KS'},
-  {n:'POSCO홀딩스',t:'005490.KS'},{n:'HD현대일렉트릭',t:'267260.KS'},{n:'한화오션',t:'042660.KS'},
-  // 미국 시가총액 상위 30 (2026.10.05 기준) — Applied Materials 신규 진입, Coca-Cola 30위 밖으로
-  {n:'NVIDIA',t:'NVDA'},{n:'Apple',t:'AAPL'},{n:'Alphabet',t:'GOOGL'},
-  {n:'Microsoft',t:'MSFT'},{n:'Amazon',t:'AMZN'},{n:'SpaceX',t:'SPCX'},
+  {n:'LG에너지솔루션',t:'373220.KS'},{n:'삼성전기',t:'009150.KS'},{n:'삼성바이오로직스',t:'207940.KS'},
+  {n:'현대차',t:'005380.KS'},{n:'KB금융',t:'105560.KS'},{n:'셀트리온',t:'068270.KS'},
+  {n:'삼성생명',t:'032830.KS'},{n:'삼성물산',t:'028260.KS'},{n:'신한지주',t:'055550.KS'},
+  {n:'삼성SDI',t:'006400.KS'},{n:'기아',t:'000270.KS'},{n:'한화에어로스페이스',t:'012450.KS'},
+  {n:'SK',t:'034730.KS'},{n:'하나금융지주',t:'086790.KS'},{n:'현대모비스',t:'012330.KS'},
+  {n:'두산에너빌리티',t:'034020.KS'},{n:'삼성화재',t:'000810.KS'},{n:'HD현대중공업',t:'329180.KS'},
+  {n:'NAVER',t:'035420.KS'},{n:'우리금융지주',t:'316140.KS'},{n:'LG전자',t:'066570.KS'},
+  {n:'메리츠금융지주',t:'138040.KS'},{n:'POSCO홀딩스',t:'005490.KS'},{n:'HMM',t:'011200.KS'},
+  {n:'고려아연',t:'010130.KS'},{n:'KT&G',t:'033780.KS'},{n:'한국전력',t:'015760.KS'},
+  // 미국 시가총액 상위 30 (2026.11.06 기준) — Coca-Cola·P&G·UnitedHealth 신규 진입,
+  // Lam Research·Applied Materials·Caterpillar 30위 밖으로
+  {n:'NVIDIA',t:'NVDA'},{n:'Apple',t:'AAPL'},{n:'Microsoft',t:'MSFT'},
+  {n:'Alphabet',t:'GOOGL'},{n:'Amazon',t:'AMZN'},{n:'SpaceX',t:'SPCX'},
   {n:'Meta Platforms',t:'META'},{n:'Broadcom',t:'AVGO'},{n:'Tesla',t:'TSLA'},
-  {n:'Micron',t:'MU'},{n:'Berkshire Hathaway',t:'BRK-B'},{n:'AMD',t:'AMD'},
-  {n:'Eli Lilly',t:'LLY'},{n:'JPMorgan Chase',t:'JPM'},{n:'Walmart',t:'WMT'},
-  {n:'Visa',t:'V'},{n:'ExxonMobil',t:'XOM'},{n:'Intel',t:'INTC'},
-  {n:'Johnson & Johnson',t:'JNJ'},{n:'Mastercard',t:'MA'},{n:'AbbVie',t:'ABBV'},
-  {n:'Palantir',t:'PLTR'},{n:'Cisco',t:'CSCO'},{n:'Lam Research',t:'LRCX'},
-  {n:'Oracle',t:'ORCL'},{n:'Applied Materials',t:'AMAT'},{n:'Costco',t:'COST'},
-  {n:'Chevron',t:'CVX'},{n:'Caterpillar',t:'CAT'},{n:'Bank of America',t:'BAC'}
+  {n:'Eli Lilly',t:'LLY'},{n:'Berkshire Hathaway',t:'BRK-B'},{n:'Micron',t:'MU'},
+  {n:'Walmart',t:'WMT'},{n:'JPMorgan Chase',t:'JPM'},{n:'AMD',t:'AMD'},
+  {n:'ExxonMobil',t:'XOM'},{n:'Visa',t:'V'},{n:'Johnson & Johnson',t:'JNJ'},
+  {n:'Mastercard',t:'MA'},{n:'AbbVie',t:'ABBV'},{n:'Palantir',t:'PLTR'},
+  {n:'Intel',t:'INTC'},{n:'Chevron',t:'CVX'},{n:'Costco',t:'COST'},
+  {n:'Cisco',t:'CSCO'},{n:'Coca-Cola',t:'KO'},{n:'Oracle',t:'ORCL'},
+  {n:'Procter & Gamble',t:'PG'},{n:'UnitedHealth',t:'UNH'},{n:'Bank of America',t:'BAC'}
 ];
 
 var tickerScanResults = {}; // ticker -> {n,t,rsi}
