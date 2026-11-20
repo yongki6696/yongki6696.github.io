@@ -256,11 +256,12 @@ body.cz-open .scroll-fab { display:none !important; }
 #chart-zoom .cz-info .u { color:#ef4444; } #chart-zoom .cz-info .d { color:#3b82f6; }
 #chart-zoom .cz-legend { margin:2px 0 4px; }
 #chart-zoom .cz-chart { position:relative; height:36vh; height:36dvh; min-height:200px; max-height:420px; margin-top:16px; }
-#chart-zoom .cz-plot { position:absolute; left:0; top:0; bottom:0; right:40px; touch-action:none; border-right:1px solid #262626; border-bottom:1px solid #262626; }
+#chart-zoom .cz-plot { position:absolute; left:0; top:0; bottom:0; right:40px; touch-action:none; overflow:hidden; border-right:1px solid #262626; border-bottom:1px solid #262626; }
 #chart-zoom .cz-svg { position:absolute; inset:0; }
 #chart-zoom .cz-plot svg.mini-chart { position:absolute; inset:0; width:100%; height:100%; margin:0; }
 #chart-zoom .cz-grid i { position:absolute; left:0; right:0; height:1px; background:rgba(255,255,255,.06); }
 #chart-zoom .cz-yaxis { position:absolute; right:0; top:0; bottom:0; width:36px; }
+#chart-zoom .cz-chart { overflow:visible; contain:layout; }
 #chart-zoom .cz-yaxis .cz-unit { position:absolute; right:0; top:-15px; font-size:10px; color:var(--muted); white-space:nowrap; }
 #chart-zoom .cz-yaxis span { position:absolute; left:4px; transform:translateY(-50%); font-size:10.5px; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap; }
 #chart-zoom .cz-xaxis { position:relative; height:18px; margin-right:40px; margin-top:4px; }
@@ -2714,7 +2715,14 @@ function czEnsure(){
   }
   area.addEventListener('pointerdown', function(e){ area.setPointerCapture && area.setPointerCapture(e.pointerId); pickAt(e.clientX); });
   area.addEventListener('pointermove', function(e){ if (e.buttons || e.pointerType === 'touch') pickAt(e.clientX); });
-  window.addEventListener('resize', function(){ if (czState) czRender(); });
+  // 화면 회전·크기 변화 시 다시 그리기. 아이폰은 회전 직후 resize 시점엔 아직 크기가 옛날 값이라
+  // (처음 확대 후 가로로 돌리면 눈금이 차트 밖으로 삐져나오던 원인) 차트 칸 크기 자체를 지켜보다가 바뀌면 다시 그림
+  var czTimer = null;
+  function czReflow(){ if (!czState) return; clearTimeout(czTimer); czTimer = setTimeout(function(){ requestAnimationFrame(function(){ if (czState) czRender(); }); }, 60); }
+  window.addEventListener('resize', czReflow);
+  window.addEventListener('orientationchange', function(){ czReflow(); setTimeout(czReflow, 350); });
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', czReflow);
+  if (window.ResizeObserver) new ResizeObserver(czReflow).observe(m.querySelector('.cz-chart'));
   window.addEventListener('popstate', function(){ if (czState) czClose(true); });
   return m;
 }
