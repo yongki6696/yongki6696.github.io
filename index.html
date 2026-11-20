@@ -270,6 +270,27 @@ body.cz-open .scroll-fab { display:none !important; }
 #chart-zoom .cz-ranges button { flex:1; padding:9px 0; border-radius:10px; border:1px solid #2a2a2a; background:#161616; color:var(--text2); font-size:13px; font-weight:700; }
 #chart-zoom .cz-ranges button.on { background:rgba(37,99,235,.18); border-color:#2563eb; color:#93c5fd; }
 #chart-zoom .cz-hint { text-align:center; font-size:11px; color:var(--muted); margin-top:8px; }
+/* 아이폰을 가로로 돌리면 글씨를 자동으로 키우는 기능 끄기 (확대 화면 글씨가 겹치던 원인) */
+html { -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+#chart-zoom { overflow-y:auto; }
+#chart-zoom .cz-sep { display:block; }
+/* 세로 화면: 제목은 위에 두고, 차트 묶음(가격 정보~기간 버튼)은 화면 가운데로 */
+#chart-zoom .cz-info { margin-top:auto; }
+#chart-zoom .cz-hint { margin-bottom:auto; padding-bottom:6vh; }
+/* 가로 화면(높이가 낮을 때): 정보 한 줄, 차트는 남는 높이 전부, 안내 문구 숨김, 노치 쪽 여백 */
+@media (orientation:landscape) and (max-height:540px){
+  #chart-zoom { padding:calc(env(safe-area-inset-top) + 6px) max(10px, env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 6px) max(10px, env(safe-area-inset-left)); }
+  #chart-zoom .cz-head { margin-bottom:2px; }
+  #chart-zoom .cz-close { width:34px; height:34px; }
+  #chart-zoom .cz-info { margin-top:0; min-height:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #chart-zoom .cz-sep { display:inline; }
+  #chart-zoom .cz-sep::before { content:'  ·  '; white-space:pre; }
+  #chart-zoom .cz-legend { margin:0; }
+  #chart-zoom .cz-chart { flex:1 1 auto; height:auto; min-height:110px; max-height:none; margin-top:14px; }
+  #chart-zoom .cz-ranges { margin-top:6px; }
+  #chart-zoom .cz-ranges button { padding:6px 0; font-size:12px; }
+  #chart-zoom .cz-hint { display:none; }
+}
 .chart-legend { display:flex; gap:12px; margin-bottom:4px; }
 .chart-legend span { font-size:10px; color:var(--muted); display:flex; align-items:center; gap:4px; }
 .legend-line { display:inline-block; width:14px; height:2px; border-radius:1px; }
@@ -2714,7 +2735,7 @@ function czShowPick(){
   m.querySelector('.cz-info').innerHTML =
     '<b>'+czDate(s.timestamps ? s.timestamps[di] : null)+'</b>'
     + (chg != null ? ' <span class="'+cls+'">'+(chg >= 0 ? '+' : '')+chg.toFixed(2)+'%</span>' : '')
-    + '<br>시 <b>'+(o != null ? czFmt(o) : '—')+'</b> · 고 <b class="u">'+(h != null ? czFmt(h) : '—')+'</b> · 저 <b class="d">'+(l != null ? czFmt(l) : '—')+'</b> · 종 <b>'+czFmt(c)+'</b>';
+    + '<span class="cz-sep"></span>시 <b>'+(o != null ? czFmt(o) : '—')+'</b> · 고 <b class="u">'+(h != null ? czFmt(h) : '—')+'</b> · 저 <b class="d">'+(l != null ? czFmt(l) : '—')+'</b> · 종 <b>'+czFmt(c)+'</b>';
   var cross = m.querySelector('.cz-cross'), area = m.querySelector('.cz-plot');
   if (st.pick == null) { cross.style.display = 'none'; return; }
   var W = area.clientWidth, PAD = 4, x = n > 1 ? PAD + (i / (n - 1)) * (W - PAD*2) : W/2;
