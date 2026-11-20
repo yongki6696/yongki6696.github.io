@@ -244,7 +244,7 @@ body.edit-mode .card { cursor:default; }
 body.edit-mode .chart-tap { cursor:default; }
 /* 차트 확대 보기 */
 #chart-zoom { position:fixed; inset:0; z-index:9999; background:#0a0a0a; display:none; flex-direction:column;
-  padding:calc(env(safe-area-inset-top) + 10px) 12px calc(env(safe-area-inset-bottom) + 12px); }
+  padding:calc(env(safe-area-inset-top) + 10px) 8px calc(env(safe-area-inset-bottom) + 12px); }
 #chart-zoom.open { display:flex; }
 body.cz-open .scroll-fab { display:none !important; }
 #chart-zoom .cz-head { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
@@ -255,14 +255,15 @@ body.cz-open .scroll-fab { display:none !important; }
 #chart-zoom .cz-info b { color:var(--text); font-weight:700; }
 #chart-zoom .cz-info .u { color:#ef4444; } #chart-zoom .cz-info .d { color:#3b82f6; }
 #chart-zoom .cz-legend { margin:2px 0 4px; }
-#chart-zoom .cz-chart { position:relative; height:50vh; height:50dvh; min-height:220px; max-height:560px; margin-top:4px; }
-#chart-zoom .cz-plot { position:absolute; left:0; top:0; bottom:0; right:62px; touch-action:none; border-right:1px solid #262626; border-bottom:1px solid #262626; }
+#chart-zoom .cz-chart { position:relative; height:36vh; height:36dvh; min-height:200px; max-height:420px; margin-top:16px; }
+#chart-zoom .cz-plot { position:absolute; left:0; top:0; bottom:0; right:40px; touch-action:none; border-right:1px solid #262626; border-bottom:1px solid #262626; }
 #chart-zoom .cz-svg { position:absolute; inset:0; }
 #chart-zoom .cz-plot svg.mini-chart { position:absolute; inset:0; width:100%; height:100%; margin:0; }
 #chart-zoom .cz-grid i { position:absolute; left:0; right:0; height:1px; background:rgba(255,255,255,.06); }
-#chart-zoom .cz-yaxis { position:absolute; right:0; top:0; bottom:0; width:58px; }
-#chart-zoom .cz-yaxis span { position:absolute; left:0; transform:translateY(-50%); font-size:10.5px; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap; }
-#chart-zoom .cz-xaxis { position:relative; height:18px; margin-right:62px; margin-top:4px; }
+#chart-zoom .cz-yaxis { position:absolute; right:0; top:0; bottom:0; width:36px; }
+#chart-zoom .cz-yaxis .cz-unit { position:absolute; right:0; top:-15px; font-size:10px; color:var(--muted); white-space:nowrap; }
+#chart-zoom .cz-yaxis span { position:absolute; left:4px; transform:translateY(-50%); font-size:10.5px; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap; }
+#chart-zoom .cz-xaxis { position:relative; height:18px; margin-right:40px; margin-top:4px; }
 #chart-zoom .cz-xaxis span { position:absolute; top:0; font-size:10.5px; color:var(--muted); white-space:nowrap; font-variant-numeric:tabular-nums; }
 #chart-zoom .cz-cross { position:absolute; top:0; bottom:0; width:1px; background:rgba(255,255,255,.45); pointer-events:none; display:none; }
 #chart-zoom .cz-ranges { display:flex; gap:6px; margin-top:12px; }
@@ -2732,10 +2733,14 @@ function czRender(){
   }).join('');
   var leg = document.querySelector('#card-'+CSS.escape(s.ticker+'-'+s.period)+' .chart-legend');
   m.querySelector('.cz-legend').innerHTML = leg ? leg.innerHTML : '';
-  var area = m.querySelector('.cz-plot'), W = Math.max(150, area.clientWidth), H = Math.max(120, area.clientHeight);
   var ohlc = (s.chartOpen && s.chartHigh && s.chartLow) ? { o:s.chartOpen, h:s.chartHigh, l:s.chartLow } : null;
   var len = Math.min(st.len, total);
-  czAxes(m, s, len, W, H, ohlc);
+  var yl = czYLabels(s, len, ohlc);   // 가격 눈금을 먼저 정해서, 글자 길이만큼만 오른쪽 칸을 비움 → 차트 가로 폭 최대
+  m.querySelector('.cz-plot').style.right = (yl.gutter + 4) + 'px';
+  m.querySelector('.cz-yaxis').style.width = yl.gutter + 'px';
+  m.querySelector('.cz-xaxis').style.marginRight = (yl.gutter + 4) + 'px';
+  var area = m.querySelector('.cz-plot'), W = Math.max(150, area.clientWidth), H = Math.max(120, area.clientHeight);
+  czAxes(m, s, len, W, H, ohlc, yl);
   var color = (s.chartData[total-1] >= s.chartData[0]) ? '#22c55e' : '#ef4444';
   var html = withChartSize(W, H, function(){
     var divResult = total >= 30 ? detectDivergence(s.chartData, s.timestamps) : null;
@@ -2751,18 +2756,34 @@ function czNiceStep(raw){
   var p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
   return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
 }
-function czAxes(m, s, len, W, H, ohlc){
-  var PAD = 4, pr = chartPriceRange(s.chartData, len, hasOHLC(s.chartData, ohlc) ? ohlc : null);
+// 가격 눈금: 금액이 크면 단위를 붙여 숫자를 짧게 (하이닉스 1,100,000 → '천원' 단위 1,100)
+function czYLabels(s, len, ohlc){
+  var pr = chartPriceRange(s.chartData, len, hasOHLC(s.chartData, ohlc) ? ohlc : null);
   var minP = pr.minP, range = pr.range, maxP = minP + range;
-  function ty(v){ return H - PAD - ((v - minP) / range) * (H - PAD*2); }
-  var step = czNiceStep(range / 5), dec = step >= 1 ? 0 : Math.min(8, Math.ceil(-Math.log10(step)) + (czNiceStep(step) / Math.pow(10, Math.floor(Math.log10(step))) === 2.5 ? 1 : 0));
-  var yl = '', gl = '';
+  var krw = (s.currency === 'KRW') || /\.(KS|KQ)$/i.test(s.ticker);
+  var div = 1, unit = '';
+  if (maxP >= 1e8) { div = 1e6; unit = krw ? '백만원' : '×1M'; }
+  else if (maxP >= 1e5) { div = 1e3; unit = krw ? '천원' : '×1,000'; }
+  else if (krw) unit = '원';
+  var step = czNiceStep(range / 4);
+  var sd = step / div, dec = sd >= 1 ? 0 : Math.min(8, Math.ceil(-Math.log10(sd) - 1e-9) + (Math.abs(sd / Math.pow(10, Math.floor(Math.log10(sd))) - 2.5) < 1e-6 ? 1 : 0));
+  var ticks = [], maxLen = 0;
   for (var v = Math.ceil(minP / step) * step; v <= maxP + 1e-9; v += step) {
-    var y = ty(v); if (y < 6 || y > H - 4) continue;
-    var txt = v.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
-    yl += '<span style="top:'+y.toFixed(1)+'px">'+txt+'</span>';
-    gl += '<i style="top:'+y.toFixed(1)+'px"></i>';
+    var txt = (v / div).toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+    ticks.push({ v: v, txt: txt }); if (txt.length > maxLen) maxLen = txt.length;
   }
+  var gutter = Math.max(24, Math.round(maxLen * 6.2 + 6), unit ? unit.length * (krw ? 10 : 6) : 0);
+  return { minP: minP, range: range, ticks: ticks, unit: unit, gutter: gutter };
+}
+function czAxes(m, s, len, W, H, ohlc, Y){
+  var PAD = 4, minP = Y.minP, range = Y.range;
+  function ty(v){ return H - PAD - ((v - minP) / range) * (H - PAD*2); }
+  var yl = Y.unit ? '<div class="cz-unit">'+Y.unit+'</div>' : '', gl = '';
+  Y.ticks.forEach(function(t){
+    var y = ty(t.v); if (y < 6 || y > H - 4) return;
+    yl += '<span style="top:'+y.toFixed(1)+'px">'+t.txt+'</span>';
+    gl += '<i style="top:'+y.toFixed(1)+'px"></i>';
+  });
   m.querySelector('.cz-yaxis').innerHTML = yl;
   m.querySelector('.cz-grid').innerHTML = gl;
   // 날짜: 화면 폭에 맞춰 4~5개를 고르게
