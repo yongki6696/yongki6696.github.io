@@ -240,6 +240,28 @@ body.edit-mode .card { cursor:default; }
 .mini-chart { width:100%; height:84px; margin:8px 0 4px; display:block; }
 .mini-chart path.line { fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 .mini-chart path.area { stroke:none; }
+.chart-tap { cursor:zoom-in; -webkit-tap-highlight-color:transparent; }
+body.edit-mode .chart-tap { cursor:default; }
+/* 차트 확대 보기 */
+#chart-zoom { position:fixed; inset:0; z-index:9999; background:#0a0a0a; display:none; flex-direction:column;
+  padding:calc(env(safe-area-inset-top) + 10px) 12px calc(env(safe-area-inset-bottom) + 12px); }
+#chart-zoom.open { display:flex; }
+body.cz-open .scroll-fab { display:none !important; }
+#chart-zoom .cz-head { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+#chart-zoom .cz-title { flex:1; min-width:0; font-size:18px; font-weight:800; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#chart-zoom .cz-title small { font-size:12px; font-weight:600; color:var(--muted); margin-left:6px; }
+#chart-zoom .cz-close { width:40px; height:40px; border-radius:12px; border:1px solid #2a2a2a; background:#161616; color:var(--text); font-size:18px; }
+#chart-zoom .cz-info { min-height:34px; font-size:12px; color:var(--text2); line-height:1.45; font-variant-numeric:tabular-nums; }
+#chart-zoom .cz-info b { color:var(--text); font-weight:700; }
+#chart-zoom .cz-info .u { color:#ef4444; } #chart-zoom .cz-info .d { color:#3b82f6; }
+#chart-zoom .cz-legend { margin:2px 0 4px; }
+#chart-zoom .cz-chart { position:relative; flex:1; min-height:200px; touch-action:none; }
+#chart-zoom .cz-chart svg.mini-chart { position:absolute; inset:0; width:100%; height:100%; margin:0; }
+#chart-zoom .cz-cross { position:absolute; top:0; bottom:0; width:1px; background:rgba(255,255,255,.45); pointer-events:none; display:none; }
+#chart-zoom .cz-ranges { display:flex; gap:6px; margin-top:10px; }
+#chart-zoom .cz-ranges button { flex:1; padding:9px 0; border-radius:10px; border:1px solid #2a2a2a; background:#161616; color:var(--text2); font-size:13px; font-weight:700; }
+#chart-zoom .cz-ranges button.on { background:rgba(37,99,235,.18); border-color:#2563eb; color:#93c5fd; }
+#chart-zoom .cz-hint { text-align:center; font-size:11px; color:var(--muted); margin-top:8px; }
 .chart-legend { display:flex; gap:12px; margin-bottom:4px; }
 .chart-legend span { font-size:10px; color:var(--muted); display:flex; align-items:center; gap:4px; }
 .legend-line { display:inline-block; width:14px; height:2px; border-radius:1px; }
@@ -1597,38 +1619,7 @@ function loadStock(s){
     // 접미사 없는 티커를 못 찾으면: 해외 거래소 종목일 수 있으니 접미사 안내 (예: 영국 BLC3 → BLC3.L)
     if (/^[A-Z0-9]{1,6}$/.test(s.ticker) && /데이터 로드 실패|데이터 없음|존재하지 않는/.test(e.message||'')) s.error='못 찾음 · 해외는 .L(영국) 등 붙이기';
   })
-  .then(function(){ renderCard(s); applyCardFilter(s); checkAlert(s); updateStats(); updateEmptyState(); loadExtendedHours(s); loadIntroChart(s); });
-}
-
-// ══════════════════════════════════════════
-// 신규 상장 종목 차트: 일봉이 15개 미만이면 일봉 차트는 점 몇 개뿐이라 그릴 게 없음
-// → 상장 후 전체를 분봉(상장 1~2일째 5분봉, 그 뒤 30분봉)으로 받아서 대신 그림 (정규장만)
-// RSI·매수 신호는 일봉 15개가 쌓인 뒤부터 (분봉으로 RSI를 계산하면 일봉 RSI와 의미가 달라서 섞지 않음)
-// ══════════════════════════════════════════
-function loadIntroChart(s){
-  var n = s.chartData ? s.chartData.length : 0;
-  if (s.error || s.period !== '1d' || !n || n >= 15 || isCryptoTicker(s.ticker) || isHLTicker(s.ticker)) {
-    if (s.intro) { s.intro = null; renderCard(s); }
-    return;
-  }
-  var iv = n <= 2 ? '5m' : '30m', rg = n <= 2 ? '5d' : '1mo';
-  var url = 'https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(s.ticker)+'?interval='+iv+'&range='+rg+'&t='+Date.now();
-  fetchYahooUrl(url).then(function(d){
-    var r = d.chart.result[0], q = r.indicators.quote[0] || {};
-    var C = q.close || [], O = q.open || [], Hh = q.high || [], L = q.low || [];
-    var cl = [], op = [], hi = [], lo = [];
-    for (var i = 0; i < C.length; i++) {
-      var c = C[i]; if (c == null || isNaN(c)) continue;
-      var o = (O[i] != null && O[i] > 0) ? O[i] : (cl.length ? cl[cl.length-1] : c);
-      var h = Math.max((Hh[i] != null && Hh[i] > 0) ? Hh[i] : c, c, o);
-      var l = Math.min((L[i] != null && L[i] > 0) ? L[i] : c, c, o);
-      cl.push(c); op.push(o); hi.push(h); lo.push(l);
-    }
-    if (cl.length < 2) return;
-    var N = 400;
-    s.intro = { data: cl.slice(-N), ohlc: { o: op.slice(-N), h: hi.slice(-N), l: lo.slice(-N) }, label: iv === '5m' ? '5분봉' : '30분봉' };
-    renderCard(s);
-  }).catch(function(){ /* 분봉을 못 받으면 차트 없이 그대로 */ });
+  .then(function(){ renderCard(s); applyCardFilter(s); checkAlert(s); updateStats(); updateEmptyState(); loadExtendedHours(s); });
 }
 
 // ══════════════════════════════════════════
@@ -2021,19 +2012,24 @@ function chartPriceRange(data, displayLen, ohlc){
     var a=lo[i]!=null?lo[i]:display[i], b=hi[i]!=null?hi[i]:display[i];
     if(a<minP)minP=a; if(b>maxP)maxP=b;
   }
+  if(display.length<5){ var padR=(maxP-minP)*0.25||Math.abs(maxP)*0.02||1; minP-=padR; maxP+=padR; }   // 봉이 몇 개 없으면 위아래 여백
   return {minP:minP,maxP:maxP,range:(maxP-minP)||1};
 }
 function hasOHLC(data, ohlc){
   return !!(ohlc && ohlc.o && ohlc.h && ohlc.l && ohlc.o.length===data.length && ohlc.h.length===data.length && ohlc.l.length===data.length);
 }
-var CANDLE_UP='#ef4444', CANDLE_DOWN='#3b82f6';   // 국내 증권사 관례: 양봉 빨강, 음봉 파랑
+var CANDLE_UP='#ef4444', CANDLE_DOWN='#3b82f6';
+// 차트 그림 크기(viewBox). 카드는 320×90, 확대 보기에서는 화면 크기에 맞춰 잠깐 바꿔서 그림
+var CH_W=320, CH_H=90, CH_MK=1;   // CH_MK: 매수·고점주의 표시 크기 배율 (확대 보기에서 키움)
+function withChartSize(w, h, fn, mk){ var ow=CH_W, oh=CH_H, om=CH_MK; CH_W=w; CH_H=h; CH_MK=mk||1; try { return fn(); } finally { CH_W=ow; CH_H=oh; CH_MK=om; } }   // 국내 증권사 관례: 양봉 빨강, 음봉 파랑
 function makeMiniChart(data,color,displayLen,longData,longLines,ohlc){
-  if(!data||data.length<2) return '';
+  if(!data||!data.length) return '';
+  if(data.length<2 && !hasOHLC(data, ohlc)) return '';   // 봉 차트는 봉 1개(상장 첫날)도 그림
   displayLen = displayLen || Math.min(180, data.length);
-  var display=data.slice(-displayLen),W=320,H=90,PAD=4;
+  var display=data.slice(-displayLen),W=CH_W,H=CH_H,PAD=4;
   var candle=hasOHLC(data, ohlc);
   var pr=chartPriceRange(data, displayLen, candle?ohlc:null), minP=pr.minP, maxP=pr.maxP, range=pr.range;
-  function tx(i,len){return PAD+(i/(len-1))*(W-PAD*2);}
+  function tx(i,len){return len>1 ? PAD+(i/(len-1))*(W-PAD*2) : W/2;}
   function ty(v){return H-PAD-((v-minP)/range)*(H-PAD*2);}
   var pts=display.map(function(v,i){return tx(i,display.length).toFixed(1)+','+ty(v).toFixed(1);});
   var lp='M'+pts.join('L'),ap='M'+PAD+','+H+' L'+pts.join('L')+' L'+(W-PAD)+','+H+' Z';
@@ -2063,7 +2059,7 @@ function makeMiniChart(data,color,displayLen,longData,longLines,ohlc){
   }
   if(candle){
     // 봉 차트: 몸통(시가~종가) + 윗꼬리·밑꼬리(고가~저가). 같은 색끼리 path 하나로 묶어서 가볍게 그림
-    var n=display.length, step=(W-PAD*2)/Math.max(1,n-1), bw=Math.max(0.6, Math.min(8, step*0.7));
+    var n=display.length, step=n>1?(W-PAD*2)/(n-1):24, bw=Math.max(0.6, Math.min(W/40, step*0.7));
     var off=data.length-n, wick={up:'',dn:''}, body={up:'',dn:''};
     for(var ci=0;ci<n;ci++){
       var di2=off+ci, o=ohlc.o[di2], c=data[di2], h=ohlc.h[di2], l=ohlc.l[di2];
@@ -2099,7 +2095,7 @@ function makeDivMarkers(data, div, displayLen, ohlc){
   if(!data||!div||div.idx1==null||div.idx2==null) return '';
   displayLen = displayLen || Math.min(180, data.length);
   var dataStartIdx=data.length-displayLen;
-  var W=320,H=90,PAD=4;
+  var W=CH_W,H=CH_H,PAD=4;
   var pr=chartPriceRange(data, displayLen, hasOHLC(data, ohlc)?ohlc:null), minP=pr.minP, range=pr.range;
   function tx(i){return PAD+(i/(displayLen-1))*(W-PAD*2);}
   function ty(v){return H-PAD-((v-minP)/range)*(H-PAD*2);}
@@ -2114,8 +2110,8 @@ function makeDivMarkers(data, div, displayLen, ohlc){
 
   return '<svg class="div-markers" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none">'
     +'<line x1="'+x1.toFixed(1)+'" y1="'+y1.toFixed(1)+'" x2="'+x2.toFixed(1)+'" y2="'+y2.toFixed(1)+'" stroke="'+markColor+'" stroke-width="1.3" stroke-dasharray="2,2" opacity="0.85"/>'
-    +'<circle cx="'+x1.toFixed(1)+'" cy="'+y1.toFixed(1)+'" r="3" fill="'+markColor+'" stroke="#000" stroke-width="0.8"/>'
-    +'<circle cx="'+x2.toFixed(1)+'" cy="'+y2.toFixed(1)+'" r="3" fill="'+markColor+'" stroke="#000" stroke-width="0.8"/>'
+    +'<circle cx="'+x1.toFixed(1)+'" cy="'+y1.toFixed(1)+'" r="'+(3*CH_MK)+'" fill="'+markColor+'" stroke="#000" stroke-width="0.8"/>'
+    +'<circle cx="'+x2.toFixed(1)+'" cy="'+y2.toFixed(1)+'" r="'+(3*CH_MK)+'" fill="'+markColor+'" stroke="#000" stroke-width="0.8"/>'
     +'</svg>';
 }
 
@@ -2128,7 +2124,7 @@ function makeOversoldMarkers(data, displayLen, lows, ohlc){
   if(!data||data.length<20) return '';
   displayLen = displayLen || Math.min(180, data.length);
   var dataStartIdx=data.length-displayLen;
-  var W=320,H=90,PAD=4;
+  var W=CH_W,H=CH_H,PAD=4;
   var candle=hasOHLC(data, ohlc);
   var pr=chartPriceRange(data, displayLen, candle?ohlc:null), minP=pr.minP, range=pr.range;
   // 마커를 찍을 높이: 봉 차트면 그 봉의 고가(윗꼬리 끝) 바로 위, 선 차트면 종가 위
@@ -2176,14 +2172,14 @@ function makeOversoldMarkers(data, displayLen, lows, ohlc){
     var rel=idx-dataStartIdx;
     if(rel<0||rel>=displayLen) return;
     var x=tx(rel), y=ty(topOf(idx));   // 봉 차트면 윗꼬리 끝 위, 선 차트면 종가 위
-    var base=Math.max(14, y-4);
-    var tri='M'+(x-3.5).toFixed(1)+','+base.toFixed(1)+' L'+(x+3.5).toFixed(1)+','+base.toFixed(1)+' L'+x.toFixed(1)+','+(base-5).toFixed(1)+' Z';
+    var K=CH_MK, base=Math.max(14*K, y-4*K);
+    var tri='M'+(x-3.5*K).toFixed(1)+','+base.toFixed(1)+' L'+(x+3.5*K).toFixed(1)+','+base.toFixed(1)+' L'+x.toFixed(1)+','+(base-5*K).toFixed(1)+' Z';
     if(z.close){
-      marks+='<path d="'+tri+'" fill="#4ade80" stroke="#000" stroke-width="0.6"/>';
-      marks+='<text x="'+x.toFixed(1)+'" y="'+(base-7).toFixed(1)+'" font-size="6.5" fill="#4ade80" text-anchor="middle" font-weight="700">매수</text>';
+      marks+='<path d="'+tri+'" fill="#4ade80" stroke="#000" stroke-width="'+(0.6*K)+'"/>';
+      marks+='<text x="'+Math.min(W-9*K, Math.max(9*K, x)).toFixed(1)+'" y="'+(base-7*K).toFixed(1)+'" font-size="'+(6.5*K)+'" fill="#4ade80" text-anchor="middle" font-weight="700">매수</text>';
     } else {
-      marks+='<path d="'+tri+'" fill="#000" fill-opacity="0.5" stroke="#4ade80" stroke-width="0.9"/>';
-      marks+='<text x="'+x.toFixed(1)+'" y="'+(base-7).toFixed(1)+'" font-size="6" fill="#4ade80" fill-opacity="0.8" text-anchor="middle" font-weight="700">매수</text>';
+      marks+='<path d="'+tri+'" fill="#000" fill-opacity="0.5" stroke="#4ade80" stroke-width="'+(0.9*K)+'"/>';
+      marks+='<text x="'+Math.min(W-9*K, Math.max(9*K, x)).toFixed(1)+'" y="'+(base-7*K).toFixed(1)+'" font-size="'+(6*K)+'" fill="#4ade80" fill-opacity="0.8" text-anchor="middle" font-weight="700">매수</text>';
     }
   });
 
@@ -2195,10 +2191,10 @@ function makeOversoldMarkers(data, displayLen, lows, ohlc){
     var rel=sig.idx-dataStartIdx;
     if(rel<0||rel>=displayLen) return;
     var x=tx(rel), y=ty(topOf(sig.idx));
-    var tip=Math.max(9, y-3);           // 삼각형 꼭짓점이 고점 바로 위를 가리킴
-    var top=tip-5;
-    marks+='<path d="M'+(x-3.5).toFixed(1)+','+top.toFixed(1)+' L'+(x+3.5).toFixed(1)+','+top.toFixed(1)+' L'+x.toFixed(1)+','+tip.toFixed(1)+' Z" fill="#ef4444" stroke="#000" stroke-width="0.6"/>';
-    marks+='<text x="'+x.toFixed(1)+'" y="'+(top-2.5).toFixed(1)+'" font-size="6" fill="#ef4444" text-anchor="middle" font-weight="700">고점주의</text>';
+    var K=CH_MK, tip=Math.max(9*K, y-3*K);           // 삼각형 꼭짓점이 고점 바로 위를 가리킴
+    var top=tip-5*K;
+    marks+='<path d="M'+(x-3.5*K).toFixed(1)+','+top.toFixed(1)+' L'+(x+3.5*K).toFixed(1)+','+top.toFixed(1)+' L'+x.toFixed(1)+','+tip.toFixed(1)+' Z" fill="#ef4444" stroke="#000" stroke-width="'+(0.6*K)+'"/>';
+    marks+='<text x="'+Math.min(W-14*K, Math.max(14*K, x)).toFixed(1)+'" y="'+(top-2.5*K).toFixed(1)+'" font-size="'+(6*K)+'" fill="#ef4444" text-anchor="middle" font-weight="700">고점주의</text>';
   });
 
   if(!marks) return '';
@@ -2631,15 +2627,8 @@ function renderCard(s){
   var cardOHLC = (s.chartOpen && s.chartHigh && s.chartLow) ? { o:s.chartOpen, h:s.chartHigh, l:s.chartLow } : null;
   var divMarkerHTML = divResult ? makeDivMarkers(s.chartData, divResult, chartDisplayLen, cardOHLC) : '';
   var oversoldMarkerHTML = s.chartData ? makeOversoldMarkers(s.chartData, chartDisplayLen, s.chartLow, cardOHLC) : '';
-  var introOn = !!(s.intro && s.chartData && s.chartData.length < 15);
-  if (introOn) {
-    var idt = s.intro.data;
-    chartColor = idt[idt.length-1] >= idt[0] ? '#22c55e' : '#ef4444';
-  }
-  var chartHTML = introOn
-    ? '<div style="position:relative">' + makeMiniChart(s.intro.data, chartColor, s.intro.data.length, null, null, s.intro.ohlc) + '</div>'
-    : s.chartData
-    ? (legendHTML + '<div style="position:relative">' + makeMiniChart(s.chartData,chartColor,chartDisplayLen,s.chartDataLong,longMALines(s),cardOHLC) + oversoldMarkerHTML + divMarkerHTML + '</div>')
+  var chartHTML = s.chartData
+    ? (legendHTML + '<div class="chart-tap" data-ticker="'+s.ticker+'" data-period="'+s.period+'" style="position:relative">' + makeMiniChart(s.chartData,chartColor,chartDisplayLen,s.chartDataLong,longMALines(s),cardOHLC) + oversoldMarkerHTML + divMarkerHTML + '</div>')
     : '';
   var divHTML = divResult ? getDivHTMLFromResult(divResult) : '';
   // 골든크로스/데드크로스 감지 (신규, 다이버전스와 별개로 독립 계산)
@@ -2662,8 +2651,116 @@ function renderCard(s){
     +'<div class="card-body"><div>'+priceHTML+mddDisplay+'</div>'
     +'<div><div class="rsi-label-sm">RSI(14) · '+pLabel(s.period)+'</div>'+rsiHTML+'</div></div>'
     +chartHTML+divHTML+macHTML
-    +'<div class="card-foot"><span>'+(introOn ? s.intro.label+' · 상장 후 전체 ('+s.chartData.length+'일)' : pLabel(s.period)+' · 최근 '+chartDisplayLen+(s.period==='1wk'?'주':s.period==='1mo'?'개월':'일'))+'</span><span>'+footRight+'</span></div>';
+    +'<div class="card-foot"><span>'+pLabel(s.period)+' · 최근 '+chartDisplayLen+(s.period==='1wk'?'주':s.period==='1mo'?'개월':'일')+'</span><span>'+footRight+'</span></div>';
 }
+
+// ══════════════════════════════════════════
+// 차트 확대 보기: 카드의 차트를 누르면 화면 가득 크게 + 기간 선택 + 손가락으로 짚은 봉의 시가·고가·저가·종가
+// ══════════════════════════════════════════
+var czState = null;   // {s, len}
+function czEnsure(){
+  var m = document.getElementById('chart-zoom');
+  if (m) return m;
+  m = document.createElement('div');
+  m.id = 'chart-zoom';
+  m.innerHTML = '<div class="cz-head"><div class="cz-title"></div><button type="button" class="cz-close" aria-label="닫기">✕</button></div>'
+    + '<div class="cz-info"></div><div class="cz-legend chart-legend"></div>'
+    + '<div class="cz-chart"><div class="cz-svg"></div><div class="cz-cross"></div></div>'
+    + '<div class="cz-ranges"></div><div class="cz-hint">차트를 손가락으로 짚거나 밀면 그날 시가·고가·저가·종가가 보여요</div>';
+  document.body.appendChild(m);
+  m.querySelector('.cz-close').addEventListener('click', czClose);
+  m.querySelector('.cz-ranges').addEventListener('click', function(e){
+    var b = e.target.closest('button[data-len]'); if (!b || !czState) return;
+    czState.len = +b.getAttribute('data-len'); czState.pick = null; czRender();
+  });
+  var area = m.querySelector('.cz-chart');
+  function pickAt(clientX){
+    if (!czState) return;
+    var r = area.getBoundingClientRect(), W = r.width, PAD = 4;
+    var n = Math.min(czState.len, czState.s.chartData.length);
+    var x = clientX - r.left, i = n > 1 ? Math.round((x - PAD) / (W - PAD*2) * (n - 1)) : 0;
+    czState.pick = Math.max(0, Math.min(n - 1, i));
+    czShowPick();
+  }
+  area.addEventListener('pointerdown', function(e){ area.setPointerCapture && area.setPointerCapture(e.pointerId); pickAt(e.clientX); });
+  area.addEventListener('pointermove', function(e){ if (e.buttons || e.pointerType === 'touch') pickAt(e.clientX); });
+  window.addEventListener('resize', function(){ if (czState) czRender(); });
+  window.addEventListener('popstate', function(){ if (czState) czClose(true); });
+  return m;
+}
+function czFmt(v){ return krsearchFormatPrice(czState.s.ticker, v, czState.s.currency); }
+function czDate(ts){
+  if (ts == null) return '';
+  var d = new Date(ts * 1000), p = czState.s.period;
+  var y = String(d.getFullYear()).slice(2), mo = d.getMonth()+1, da = d.getDate();
+  return p === '1mo' ? (y+'.'+mo+'월') : (y+'.'+mo+'.'+da+(p === '1wk' ? ' 주' : ''));
+}
+function czShowPick(){
+  var m = document.getElementById('chart-zoom'), st = czState, s = st.s;
+  var n = Math.min(st.len, s.chartData.length), off = s.chartData.length - n;
+  var i = st.pick == null ? n - 1 : st.pick, di = off + i;
+  var o = s.chartOpen ? s.chartOpen[di] : null, h = s.chartHigh ? s.chartHigh[di] : null, l = s.chartLow ? s.chartLow[di] : null, c = s.chartData[di];
+  var prev = di > 0 ? s.chartData[di-1] : null, chg = prev ? (c - prev) / prev * 100 : null;
+  var cls = chg == null ? '' : (chg >= 0 ? 'u' : 'd');
+  m.querySelector('.cz-info').innerHTML =
+    '<b>'+czDate(s.timestamps ? s.timestamps[di] : null)+'</b>'
+    + (chg != null ? ' <span class="'+cls+'">'+(chg >= 0 ? '+' : '')+chg.toFixed(2)+'%</span>' : '')
+    + '<br>시 <b>'+(o != null ? czFmt(o) : '—')+'</b> · 고 <b class="u">'+(h != null ? czFmt(h) : '—')+'</b> · 저 <b class="d">'+(l != null ? czFmt(l) : '—')+'</b> · 종 <b>'+czFmt(c)+'</b>';
+  var cross = m.querySelector('.cz-cross'), area = m.querySelector('.cz-chart');
+  if (st.pick == null) { cross.style.display = 'none'; return; }
+  var W = area.clientWidth, PAD = 4, x = n > 1 ? PAD + (i / (n - 1)) * (W - PAD*2) : W/2;
+  cross.style.left = x.toFixed(1) + 'px'; cross.style.display = 'block';
+}
+function czRender(){
+  var m = czEnsure(), st = czState, s = st.s, total = s.chartData.length;
+  var unit = s.period === '1wk' ? '주' : s.period === '1mo' ? '개월' : '일';
+  m.querySelector('.cz-title').innerHTML = escapeHTMLGlobal(krsearchTickerToName(s.ticker).replace(/<[^>]*>/g,'')) + '<small>'+pLabel(s.period)+(s.rsi != null ? ' · RSI '+s.rsi : '')+'</small>';
+  var opts = [180, 90, 60, 30].filter(function(v){ return v < total; });
+  opts.unshift(Math.min(total, 300));
+  opts = opts.filter(function(v, i, a){ return a.indexOf(v) === i; });
+  if (opts.indexOf(st.len) === -1) st.len = opts[Math.min(1, opts.length - 1)];
+  m.querySelector('.cz-ranges').innerHTML = opts.map(function(v, i){
+    return '<button type="button" data-len="'+v+'" class="'+(v === st.len ? 'on' : '')+'">'+(i === 0 ? '전체 '+v+unit : v+unit)+'</button>';
+  }).join('');
+  var leg = document.querySelector('#card-'+CSS.escape(s.ticker+'-'+s.period)+' .chart-legend');
+  m.querySelector('.cz-legend').innerHTML = leg ? leg.innerHTML : '';
+  var area = m.querySelector('.cz-chart'), W = Math.max(200, area.clientWidth), H = Math.max(160, area.clientHeight);
+  var ohlc = (s.chartOpen && s.chartHigh && s.chartLow) ? { o:s.chartOpen, h:s.chartHigh, l:s.chartLow } : null;
+  var len = Math.min(st.len, total);
+  var color = (s.chartData[total-1] >= s.chartData[0]) ? '#22c55e' : '#ef4444';
+  var html = withChartSize(W, H, function(){
+    var divResult = total >= 30 ? detectDivergence(s.chartData, s.timestamps) : null;
+    return makeMiniChart(s.chartData, color, len, s.chartDataLong, longMALines(s), ohlc)
+      + makeOversoldMarkers(s.chartData, len, s.chartLow, ohlc)
+      + (divResult ? makeDivMarkers(s.chartData, divResult, len, ohlc) : '');
+  }, 1.7);
+  m.querySelector('.cz-svg').innerHTML = html;
+  czShowPick();
+}
+function escapeHTMLGlobal(t){ return String(t).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function czOpen(s){
+  if (!s || !s.chartData || !s.chartData.length) return;
+  var m = czEnsure();
+  czState = { s: s, len: Math.min(90, s.chartData.length), pick: null };
+  m.classList.add('open'); document.body.classList.add('cz-open');
+  document.documentElement.style.overflow = 'hidden'; document.body.style.overflow = 'hidden';
+  try { history.pushState({ chartZoom: 1 }, ''); } catch(e){}   // 뒤로가기(스와이프)로 닫기
+  requestAnimationFrame(czRender);
+}
+function czClose(fromPop){
+  var m = document.getElementById('chart-zoom');
+  if (m) m.classList.remove('open'); document.body.classList.remove('cz-open');
+  document.documentElement.style.overflow = ''; document.body.style.overflow = '';
+  var was = czState; czState = null;
+  if (was && fromPop !== true) { try { if (history.state && history.state.chartZoom) history.back(); } catch(e){} }
+}
+document.addEventListener('click', function(e){
+  var t = e.target.closest && e.target.closest('.chart-tap');
+  if (!t || editMode) return;
+  var tk = t.getAttribute('data-ticker'), pd = t.getAttribute('data-period');
+  var s = stocks.filter(function(x){ return x.ticker === tk && x.period === pd; })[0];
+  if (s) czOpen(s);
+});
 
 // ── 전체 렌더 ──
 // ── 감시 종목 / RSI 경보 필터 ──
