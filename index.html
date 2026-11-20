@@ -1583,7 +1583,30 @@ function loadStock(s){
     // 접미사 없는 티커를 못 찾으면: 해외 거래소 종목일 수 있으니 접미사 안내 (예: 영국 BLC3 → BLC3.L)
     if (/^[A-Z0-9]{1,6}$/.test(s.ticker) && /데이터 로드 실패|데이터 없음|존재하지 않는/.test(e.message||'')) s.error='못 찾음 · 해외는 .L(영국) 등 붙이기';
   })
-  .then(function(){ renderCard(s); applyCardFilter(s); checkAlert(s); updateStats(); updateEmptyState(); loadExtendedHours(s); });
+  .then(function(){ renderCard(s); applyCardFilter(s); checkAlert(s); updateStats(); updateEmptyState(); loadExtendedHours(s); loadIntroChart(s); });
+}
+
+// ══════════════════════════════════════════
+// 신규 상장 종목 차트: 일봉이 15개 미만이면 일봉 차트는 점 몇 개뿐이라 그릴 게 없음
+// → 상장 후 전체를 분봉(상장 1~2일째 5분봉, 그 뒤 30분봉)으로 받아서 대신 그림 (정규장만)
+// RSI·매수 신호는 일봉 15개가 쌓인 뒤부터 (분봉으로 RSI를 계산하면 일봉 RSI와 의미가 달라서 섞지 않음)
+// ══════════════════════════════════════════
+function loadIntroChart(s){
+  var n = s.chartData ? s.chartData.length : 0;
+  if (s.error || s.period !== '1d' || !n || n >= 15 || isCryptoTicker(s.ticker) || isHLTicker(s.ticker)) {
+    if (s.intro) { s.intro = null; renderCard(s); }
+    return;
+  }
+  var iv = n <= 2 ? '5m' : '30m', rg = n <= 2 ? '5d' : '1mo';
+  var url = 'https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(s.ticker)+'?interval='+iv+'&range='+rg+'&t='+Date.now();
+  fetchYahooUrl(url).then(function(d){
+    var r = d.chart.result[0], cl = ((r.indicators.quote[0] || {}).close || []).filter(function(v){ return v != null && !isNaN(v); });
+    if (cl.length < 2) return;
+    // 지금 진행 중인 가격까지 끝을 맞춤 (카드 가격과 차트 끝이 같게)
+    if (s.price != null && Math.abs(cl[cl.length-1] - s.price) > 1e-9) cl.push(s.price);
+    s.intro = { data: cl.slice(-400), label: iv === '5m' ? '5분봉' : '30분봉' };
+    renderCard(s);
+  }).catch(function(){ /* 분봉을 못 받으면 차트 없이 그대로 */ });
 }
 
 // ══════════════════════════════════════════
@@ -2544,7 +2567,14 @@ function renderCard(s){
   var chartDisplayLen = divResult ? divRequiredDisplayLen(s.chartData, divResult) : Math.min(180, s.chartData?s.chartData.length:180);
   var divMarkerHTML = divResult ? makeDivMarkers(s.chartData, divResult, chartDisplayLen) : '';
   var oversoldMarkerHTML = s.chartData ? makeOversoldMarkers(s.chartData, chartDisplayLen, s.chartLow) : '';
-  var chartHTML = s.chartData
+  var introOn = !!(s.intro && s.chartData && s.chartData.length < 15);
+  if (introOn) {
+    var idt = s.intro.data;
+    chartColor = idt[idt.length-1] >= idt[0] ? '#22c55e' : '#ef4444';
+  }
+  var chartHTML = introOn
+    ? '<div style="position:relative">' + makeMiniChart(s.intro.data, chartColor, s.intro.data.length) + '</div>'
+    : s.chartData
     ? (legendHTML + '<div style="position:relative">' + makeMiniChart(s.chartData,chartColor,chartDisplayLen,s.chartDataLong,longMALines(s)) + oversoldMarkerHTML + divMarkerHTML + '</div>')
     : '';
   var divHTML = divResult ? getDivHTMLFromResult(divResult) : '';
@@ -2568,7 +2598,7 @@ function renderCard(s){
     +'<div class="card-body"><div>'+priceHTML+mddDisplay+'</div>'
     +'<div><div class="rsi-label-sm">RSI(14) · '+pLabel(s.period)+'</div>'+rsiHTML+'</div></div>'
     +chartHTML+divHTML+macHTML
-    +'<div class="card-foot"><span>'+pLabel(s.period)+' · 최근 '+chartDisplayLen+(s.period==='1wk'?'주':s.period==='1mo'?'개월':'일')+'</span><span>'+footRight+'</span></div>';
+    +'<div class="card-foot"><span>'+(introOn ? s.intro.label+' · 상장 후 전체 ('+s.chartData.length+'일)' : pLabel(s.period)+' · 최근 '+chartDisplayLen+(s.period==='1wk'?'주':s.period==='1mo'?'개월':'일'))+'</span><span>'+footRight+'</span></div>';
 }
 
 // ── 전체 렌더 ──
