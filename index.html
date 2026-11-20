@@ -255,10 +255,17 @@ body.cz-open .scroll-fab { display:none !important; }
 #chart-zoom .cz-info b { color:var(--text); font-weight:700; }
 #chart-zoom .cz-info .u { color:#ef4444; } #chart-zoom .cz-info .d { color:#3b82f6; }
 #chart-zoom .cz-legend { margin:2px 0 4px; }
-#chart-zoom .cz-chart { position:relative; flex:1; min-height:200px; touch-action:none; }
-#chart-zoom .cz-chart svg.mini-chart { position:absolute; inset:0; width:100%; height:100%; margin:0; }
+#chart-zoom .cz-chart { position:relative; height:50vh; height:50dvh; min-height:220px; max-height:560px; margin-top:4px; }
+#chart-zoom .cz-plot { position:absolute; left:0; top:0; bottom:0; right:62px; touch-action:none; border-right:1px solid #262626; border-bottom:1px solid #262626; }
+#chart-zoom .cz-svg { position:absolute; inset:0; }
+#chart-zoom .cz-plot svg.mini-chart { position:absolute; inset:0; width:100%; height:100%; margin:0; }
+#chart-zoom .cz-grid i { position:absolute; left:0; right:0; height:1px; background:rgba(255,255,255,.06); }
+#chart-zoom .cz-yaxis { position:absolute; right:0; top:0; bottom:0; width:58px; }
+#chart-zoom .cz-yaxis span { position:absolute; left:0; transform:translateY(-50%); font-size:10.5px; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap; }
+#chart-zoom .cz-xaxis { position:relative; height:18px; margin-right:62px; margin-top:4px; }
+#chart-zoom .cz-xaxis span { position:absolute; top:0; font-size:10.5px; color:var(--muted); white-space:nowrap; font-variant-numeric:tabular-nums; }
 #chart-zoom .cz-cross { position:absolute; top:0; bottom:0; width:1px; background:rgba(255,255,255,.45); pointer-events:none; display:none; }
-#chart-zoom .cz-ranges { display:flex; gap:6px; margin-top:10px; }
+#chart-zoom .cz-ranges { display:flex; gap:6px; margin-top:12px; }
 #chart-zoom .cz-ranges button { flex:1; padding:9px 0; border-radius:10px; border:1px solid #2a2a2a; background:#161616; color:var(--text2); font-size:13px; font-weight:700; }
 #chart-zoom .cz-ranges button.on { background:rgba(37,99,235,.18); border-color:#2563eb; color:#93c5fd; }
 #chart-zoom .cz-hint { text-align:center; font-size:11px; color:var(--muted); margin-top:8px; }
@@ -2665,7 +2672,8 @@ function czEnsure(){
   m.id = 'chart-zoom';
   m.innerHTML = '<div class="cz-head"><div class="cz-title"></div><button type="button" class="cz-close" aria-label="닫기">✕</button></div>'
     + '<div class="cz-info"></div><div class="cz-legend chart-legend"></div>'
-    + '<div class="cz-chart"><div class="cz-svg"></div><div class="cz-cross"></div></div>'
+    + '<div class="cz-chart"><div class="cz-plot"><div class="cz-grid"></div><div class="cz-svg"></div><div class="cz-cross"></div></div><div class="cz-yaxis"></div></div>'
+    + '<div class="cz-xaxis"></div>'
     + '<div class="cz-ranges"></div><div class="cz-hint">차트를 손가락으로 짚거나 밀면 그날 시가·고가·저가·종가가 보여요</div>';
   document.body.appendChild(m);
   m.querySelector('.cz-close').addEventListener('click', czClose);
@@ -2673,7 +2681,7 @@ function czEnsure(){
     var b = e.target.closest('button[data-len]'); if (!b || !czState) return;
     czState.len = +b.getAttribute('data-len'); czState.pick = null; czRender();
   });
-  var area = m.querySelector('.cz-chart');
+  var area = m.querySelector('.cz-plot');
   function pickAt(clientX){
     if (!czState) return;
     var r = area.getBoundingClientRect(), W = r.width, PAD = 4;
@@ -2706,7 +2714,7 @@ function czShowPick(){
     '<b>'+czDate(s.timestamps ? s.timestamps[di] : null)+'</b>'
     + (chg != null ? ' <span class="'+cls+'">'+(chg >= 0 ? '+' : '')+chg.toFixed(2)+'%</span>' : '')
     + '<br>시 <b>'+(o != null ? czFmt(o) : '—')+'</b> · 고 <b class="u">'+(h != null ? czFmt(h) : '—')+'</b> · 저 <b class="d">'+(l != null ? czFmt(l) : '—')+'</b> · 종 <b>'+czFmt(c)+'</b>';
-  var cross = m.querySelector('.cz-cross'), area = m.querySelector('.cz-chart');
+  var cross = m.querySelector('.cz-cross'), area = m.querySelector('.cz-plot');
   if (st.pick == null) { cross.style.display = 'none'; return; }
   var W = area.clientWidth, PAD = 4, x = n > 1 ? PAD + (i / (n - 1)) * (W - PAD*2) : W/2;
   cross.style.left = x.toFixed(1) + 'px'; cross.style.display = 'block';
@@ -2724,9 +2732,10 @@ function czRender(){
   }).join('');
   var leg = document.querySelector('#card-'+CSS.escape(s.ticker+'-'+s.period)+' .chart-legend');
   m.querySelector('.cz-legend').innerHTML = leg ? leg.innerHTML : '';
-  var area = m.querySelector('.cz-chart'), W = Math.max(200, area.clientWidth), H = Math.max(160, area.clientHeight);
+  var area = m.querySelector('.cz-plot'), W = Math.max(150, area.clientWidth), H = Math.max(120, area.clientHeight);
   var ohlc = (s.chartOpen && s.chartHigh && s.chartLow) ? { o:s.chartOpen, h:s.chartHigh, l:s.chartLow } : null;
   var len = Math.min(st.len, total);
+  czAxes(m, s, len, W, H, ohlc);
   var color = (s.chartData[total-1] >= s.chartData[0]) ? '#22c55e' : '#ef4444';
   var html = withChartSize(W, H, function(){
     var divResult = total >= 30 ? detectDivergence(s.chartData, s.timestamps) : null;
@@ -2736,6 +2745,40 @@ function czRender(){
   }, 1.7);
   m.querySelector('.cz-svg').innerHTML = html;
   czShowPick();
+}
+// 확대 보기 축: 세로(오른쪽) = 가격 눈금 + 가로 보조선, 가로(아래) = 날짜
+function czNiceStep(raw){
+  var p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+}
+function czAxes(m, s, len, W, H, ohlc){
+  var PAD = 4, pr = chartPriceRange(s.chartData, len, hasOHLC(s.chartData, ohlc) ? ohlc : null);
+  var minP = pr.minP, range = pr.range, maxP = minP + range;
+  function ty(v){ return H - PAD - ((v - minP) / range) * (H - PAD*2); }
+  var step = czNiceStep(range / 5), dec = step >= 1 ? 0 : Math.min(8, Math.ceil(-Math.log10(step)) + (czNiceStep(step) / Math.pow(10, Math.floor(Math.log10(step))) === 2.5 ? 1 : 0));
+  var yl = '', gl = '';
+  for (var v = Math.ceil(minP / step) * step; v <= maxP + 1e-9; v += step) {
+    var y = ty(v); if (y < 6 || y > H - 4) continue;
+    var txt = v.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+    yl += '<span style="top:'+y.toFixed(1)+'px">'+txt+'</span>';
+    gl += '<i style="top:'+y.toFixed(1)+'px"></i>';
+  }
+  m.querySelector('.cz-yaxis').innerHTML = yl;
+  m.querySelector('.cz-grid').innerHTML = gl;
+  // 날짜: 화면 폭에 맞춰 4~5개를 고르게
+  var ts = s.timestamps || [], n = len, off = s.chartData.length - n, xl = '';
+  var cnt = n <= 1 ? 1 : Math.min(n, W < 260 ? 3 : W < 340 ? 4 : 5);
+  var spanDays = (n > 1 && ts[off] && ts[off+n-1]) ? (ts[off+n-1] - ts[off]) / 86400 : 0;
+  var showYear = s.period !== '1d' || spanDays > 200;
+  for (var k = 0; k < cnt; k++) {
+    var i = cnt === 1 ? n - 1 : Math.round(k * (n - 1) / (cnt - 1)), t = ts[off + i];
+    if (t == null) continue;
+    var d = new Date(t * 1000), lab = showYear ? (String(d.getFullYear()).slice(2)+'.'+(d.getMonth()+1)) : ((d.getMonth()+1)+'/'+d.getDate());
+    var x = n > 1 ? PAD + (i / (n - 1)) * (W - PAD*2) : W / 2;
+    var al = k === 0 && cnt > 1 ? 'translateX(0)' : (k === cnt - 1 && cnt > 1 ? 'translateX(-100%)' : 'translateX(-50%)');
+    xl += '<span style="left:'+x.toFixed(1)+'px;transform:'+al+'">'+lab+'</span>';
+  }
+  m.querySelector('.cz-xaxis').innerHTML = xl;
 }
 function escapeHTMLGlobal(t){ return String(t).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
 function czOpen(s){
